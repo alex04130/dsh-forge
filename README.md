@@ -1,5 +1,7 @@
 # DSH Extension Suite（DSH 扩展套件）
 
+> **Topics**: [`dsh-plugin`](https://github.com/topics/dsh-plugin) · [`deepseek-harness`](https://github.com/topics/deepseek-harness) · [`dsh`](https://github.com/topics/dsh) · [`cordis`](https://github.com/topics/cordis) ｜ 发现更多 DSH 插件：[github.com/topics/dsh-plugin](https://github.com/topics/dsh-plugin)
+
 在 DeepSeek Harness（DSH）用户层构建的一整套扩展：运行时注入器、任务感知思维模式路由、跨会话邮箱、Agent 团队、模型委派、Skill 管理器与插件管理 UI。**全部落在 `~/.dsh` 用户层，不 monkey-patch 任何 npm 包。**
 
 ## 组件
