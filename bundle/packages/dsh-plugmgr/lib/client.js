@@ -135,13 +135,6 @@ window.__ModuleLoader__.load({
         React.createElement('span', { className: 'plugmgr-section-count' }, props.count))
     }
 
-    function jumpTo(anchor) {
-      const el = document.getElementById(anchor)
-      if (el !== null && typeof el.scrollIntoView === 'function') {
-        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch (error) { el.scrollIntoView() }
-      }
-    }
-
     function ManagerButton(props) {
       const wide = props.wide === true
       const useSessions = props.useSessions
@@ -153,7 +146,7 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = React.useState(false)
       const [rows, setRows] = React.useState(null)
       const [hostEntries, setHostEntries] = React.useState(null)
-      const [showOfficial, setShowOfficial] = React.useState(false)
+      const [visible, setVisible] = React.useState({ local: true, injected: true, official: false, dynamic: true })
       const [query, setQuery] = React.useState('')
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState(null)
@@ -257,7 +250,7 @@ window.__ModuleLoader__.load({
 
       const hostLocalCards = localFiltered.map(hostCard)
       const injectedCards = injectedFiltered.map(hostCard)
-      const officialRows = showOfficial === false ? null : officialFiltered.map((entry) => {
+      const officialRows = officialFiltered.map((entry) => {
         const dot = fiberDot(entry.fiberPhase, entry.enabled)
         return React.createElement('div', { key: 'official:' + entry.entryId, className: 'plugmgr-row' },
           React.createElement('span', { className: 'plugmgr-dot', style: { background: dot.color } }),
@@ -327,22 +320,25 @@ window.__ModuleLoader__.load({
                 onChange: (e) => setQuery(e.target.value),
               }),
               React.createElement('div', { className: 'plugmgr-chips' },
-                React.createElement('button', { type: 'button', className: 'plugmgr-chip', onClick: () => jumpTo('plugmgr-sec-local') }, '本地 ' + localFiltered.length),
-                React.createElement('button', { type: 'button', className: 'plugmgr-chip' + (injectedFiltered.length === 0 ? ' plugmgr-chip-off' : ''), disabled: injectedFiltered.length === 0, onClick: () => jumpTo('plugmgr-sec-injected') }, '注入 ' + injectedFiltered.length),
-                React.createElement('button', { type: 'button', className: 'plugmgr-chip', onClick: () => jumpTo('plugmgr-sec-official') }, '官方 ' + hostGroups.official.length),
-                React.createElement('button', { type: 'button', className: 'plugmgr-chip', onClick: () => jumpTo('plugmgr-sec-dynamic') }, '动态 ' + (rows === null ? '…' : rows.length)))),
-            React.createElement(SectionTitle, { anchor: 'plugmgr-sec-local', title: '本地宿主插件', count: localFiltered.length + ' / ' + hostGroups.local.length }),
-            React.createElement('div', { className: 'plugmgr-hint' }, '写在 cordis.patch.yml，随 dsh 启动加载；启用/停用需改配置并重启。'),
-            hostEntries === null ? React.createElement('div', { className: 'plugmgr-hint' }, '读取 loader 清单中…') : (localFiltered.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, q !== '' ? '无匹配。' : '没有本地宿主插件。') : hostLocalCards),
-            React.createElement(SectionTitle, { anchor: 'plugmgr-sec-injected', title: '运行时注入', count: injectedFiltered.length + ' / ' + hostGroups.injected.length }),
-            React.createElement('div', { className: 'plugmgr-hint' }, '经 dev_inject_plugin 注入，记录在 ~/.dsh/injector/registry.json，重启后自动恢复。'),
-            injectedFiltered.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, q !== '' ? '无匹配。' : '没有运行时注入的插件。') : injectedCards,
-            React.createElement(SectionTitle, { anchor: 'plugmgr-sec-official', title: '官方插件', count: officialFiltered.length + ' / ' + hostGroups.official.length }),
-            React.createElement('button', { type: 'button', className: 'plugmgr-collapse', onClick: () => setShowOfficial((was) => !was) }, showOfficial === true ? '收起列表 ▲' : '展开列表 ▼'),
-            officialRows,
-            React.createElement(SectionTitle, { anchor: 'plugmgr-sec-dynamic', title: '动态插件', count: rows === null ? '…' : rows.length + ' 个' }),
-            rows !== null && cards.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, '没有动态插件（重启后自动清空）') : null,
-            cards),
+                React.createElement('button', { type: 'button', className: 'plugmgr-chip' + (visible.local === true ? '' : ' plugmgr-chip-off'), onClick: () => setVisible((v) => Object.assign({}, v, { local: !v.local })), title: '显示 / 隐藏本地宿主插件' }, '本地 ' + localFiltered.length),
+                React.createElement('button', { type: 'button', className: 'plugmgr-chip' + (visible.injected === true ? '' : ' plugmgr-chip-off'), onClick: () => setVisible((v) => Object.assign({}, v, { injected: !v.injected })), title: '显示 / 隐藏运行时注入插件' }, '注入 ' + injectedFiltered.length),
+                React.createElement('button', { type: 'button', className: 'plugmgr-chip' + (visible.official === true ? '' : ' plugmgr-chip-off'), onClick: () => setVisible((v) => Object.assign({}, v, { official: !v.official })), title: '显示 / 隐藏官方插件' }, '官方 ' + hostGroups.official.length),
+                React.createElement('button', { type: 'button', className: 'plugmgr-chip' + (visible.dynamic === true ? '' : ' plugmgr-chip-off'), onClick: () => setVisible((v) => Object.assign({}, v, { dynamic: !v.dynamic })), title: '显示 / 隐藏动态插件' }, '动态 ' + (rows === null ? '…' : rows.length)))),
+            visible.local === true ? React.createElement('div', { key: 'sec-local' },
+              React.createElement(SectionTitle, { anchor: 'plugmgr-sec-local', title: '本地宿主插件', count: localFiltered.length + ' / ' + hostGroups.local.length }),
+              React.createElement('div', { className: 'plugmgr-hint' }, '写在 cordis.patch.yml，随 dsh 启动加载；启用/停用需改配置并重启。'),
+              hostEntries === null ? React.createElement('div', { className: 'plugmgr-hint' }, '读取 loader 清单中…') : (localFiltered.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, q !== '' ? '无匹配。' : '没有本地宿主插件。') : hostLocalCards)) : null,
+            visible.injected === true ? React.createElement('div', { key: 'sec-injected' },
+              React.createElement(SectionTitle, { anchor: 'plugmgr-sec-injected', title: '运行时注入', count: injectedFiltered.length + ' / ' + hostGroups.injected.length }),
+              React.createElement('div', { className: 'plugmgr-hint' }, '经 dev_inject_plugin 注入，记录在 ~/.dsh/injector/registry.json，重启后自动恢复。'),
+              injectedFiltered.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, q !== '' ? '无匹配。' : '没有运行时注入的插件。') : injectedCards) : null,
+            visible.official === true ? React.createElement('div', { key: 'sec-official' },
+              React.createElement(SectionTitle, { anchor: 'plugmgr-sec-official', title: '官方插件', count: officialFiltered.length + ' / ' + hostGroups.official.length }),
+              officialRows) : null,
+            visible.dynamic === true ? React.createElement('div', { key: 'sec-dynamic' },
+              React.createElement(SectionTitle, { anchor: 'plugmgr-sec-dynamic', title: '动态插件', count: rows === null ? '…' : rows.length + ' 个' }),
+              rows !== null && cards.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, '没有动态插件（重启后自动清空）') : null,
+              cards) : null),
           React.createElement('div', { className: 'plugmgr-footer' },
             React.createElement('span', {}, '宿主插件随 dsh 启动加载；动态插件运行于 cordis-dynamic 分组 · ' + (hostEntries === null ? 0 : hostEntries.length) + ' 个 loader 条目'))))
 
