@@ -141,33 +141,5 @@ export default {
       },
       600000)
 
-    if (skills !== undefined) {
-      let disposeSkill = undefined
-      try {
-        disposeSkill = skills.register({
-          name: 'model-delegation',
-          description: 'Delegate a text task to another provider or model with model_call, and inspect available routes with model_list.',
-          whenToUse: 'When the user asks to use a different vendor or model for a task, to cross-check an answer with another model, or when a cheaper or faster model suffices for a bounded sub-task like translation, summarization, or a second opinion.',
-          content: [
-            '# Model delegation (llmrouter)',
-            '',
-            '`model_call` routes ONE text-only task to any provider/model registered in this DSH process. You remain in control: it returns the complete reply and you decide how to use it.',
-            '',
-            '## When to use',
-            '- Call `model_list` first when you do not know which provider/model ids are available.',
-            '- Use `model_call` when the user names another vendor or model, asks for a second opinion, or when a bounded sub-task (translate, summarize, classify) can go to a cheaper model.',
-            '- Pass everything the delegate needs inside `prompt` (plus `system`): there is no nested tool calling on the delegate side.',
-            '- Do NOT use `model_call` for the current conversation turn itself; the main model drives the session.',
-            '',
-            '## Rules',
-            '- `provider` and `model` must come from `model_list`; unknown routes fail fast with the available list.',
-            '- Report the delegate result faithfully, including its `finish` and `usage`, and say which provider/model produced it.',
-            '- On `ok: false`, read `failure` and either retry with a corrected route or explain the failure to the user; do not loop more than twice on the same route.',
-            '- Providers are activated in settings (`llm-pi-ai.providers`): adding a profile is zero-code; API keys resolve from the credential store.',
-          ].join('\n'),
-        })
-      } catch (error) { /* skill registration is best-effort */ }
-      if (disposeSkill !== undefined) ctx.effect(() => () => { try { disposeSkill() } catch (error) { /* best-effort */ } })
-    }
   },
 }

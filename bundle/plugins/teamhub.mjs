@@ -460,42 +460,5 @@ export default {
       })).catch(() => { /* never throw from a listener */ })
     })
 
-    if (skills !== undefined) {
-      let disposeSkill = undefined
-      try {
-        disposeSkill = skills.register({
-          name: 'agent-teamwork',
-          description: 'Orchestrate a Claude-Code-style agent team: captain + role-based continuable subagent members, dependency-ordered tasks, and direct member-to-member messaging.',
-          whenToUse: 'When the user asks for a team of agents, parallel multi-role work, or a research/review/implementation pipeline where several subagents should coordinate, or when several sessions must coordinate on one deliverable.',
-          content: [
-            '# Agent teamwork (teamhub)',
-            '',
-            'The teamhub tools implement a Claude-Code-style agent team over this process sessions. The calling session becomes the captain (lead); members are durable continuable subagent sessions.',
-            '',
-            '## Protocol',
-            '1. `team_create(name, goal)` — one team per captain.',
-            '2. `team_add_member(memberId, role, prompt)` — spawn members for each role the work needs (e.g. researcher, reviewer, implementer). Keep teams small (2-4 members is usually right); every member costs model turns.',
-            '3. `team_create_task` — split the goal into tasks; declare `dependencies` so order is enforced and `assignee` so each member knows its work.',
-            '4. Members run their missions: `team_claim_task`, work with their own tools, then `team_update_task(status, output)`. The captain may also claim/update tasks.',
-            '5. `team_send_message(to, text)` — direct member-to-member or member-to-captain messages, no captain relay. Live recipients are woken immediately; offline ones receive the message at their next session start.',
-            '6. `team_status()` — the captain polls for member activity, task board state, and its own inbox; members check it for their inbox and tasks.',
-            '7. When the goal is delivered: report to the user, then `team_delete()` to stop members and archive the team.',
-            '',
-            '## When to use a team vs plain subagents',
-            '- Use a team when work needs several coordinated ROLES and the members should talk to each other directly.',
-            '- Use plain subagent/fork calls when one bounded task with no coordination suffices.',
-            '- Prefer fewer members over more: teams amplify token cost and can stall on missing updates.',
-            '',
-            '## Rules',
-            '- Design the team BEFORE spawning: roles, task list, dependencies.',
-            '- Never invent member ids: they come from `team_add_member` / `team_status`.',
-            '- Communicate when needed: send task assignments and dependencies with team_send_message, and report completions; do not spam.',
-            '- Read outputs from `team_status` (the task board) rather than re-asking members.',
-            '- General cross-session messaging outside a team remains available: session_list / session_read / session_send / mailbox_check (cross-session-mailbox skill).',
-          ].join('\n'),
-        })
-      } catch (error) { /* skill registration is best-effort */ }
-      if (disposeSkill !== undefined) ctx.effect(() => () => { try { disposeSkill() } catch (error) { /* best-effort */ } })
-    }
   },
 }

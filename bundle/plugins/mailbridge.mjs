@@ -284,33 +284,5 @@ export default {
       })).catch(() => { /* never throw from a listener */ })
     })
 
-    if (skills !== undefined) {
-      let disposeSkill = undefined
-      try {
-        disposeSkill = skills.register({
-          name: 'cross-session-mailbox',
-          description: 'Coordinate and exchange messages between sessions in this DSH process with session_list / session_read / session_send / mailbox_check.',
-          whenToUse: 'When the user asks to send work or a question to another session, check what other sessions are doing, read what another session produced, or check messages other sessions sent to this one.',
-          content: [
-            '# Cross-session communication (mailbridge)',
-            '',
-            'These tools connect sessions inside ONE running DSH process. Use them to coordinate parallel sessions, hand off tasks, or gather results.',
-            '',
-            '## When to use',
-            '- Call `session_list` first: get real session ids before addressing anything.',
-            '- `session_send(targetSessionId, text)`: hand off work or ask another session a question. `delivered: "live"` means the target received it in its inbox immediately and was woken. `delivered: "queued"` means the target was offline: the message is stored durably and delivered automatically when that session next starts.',
-            '- `session_read(sessionId)`: read another session recent log before messaging it, or collect its results.',
-            '- `mailbox_check()`: consume messages addressed to THIS session that arrived while it was offline. Live deliveries need no check: they appear as ordinary user messages prefixed with `[cross-session message from ...]`.',
-            '',
-            '## Rules',
-            '- Never invent a session id: take it from `session_list`.',
-            '- Treat a received cross-session message like a normal user request and answer it directly.',
-            '- Keep inter-session messages self-contained: state the goal, what you need, and any deadline or expected format.',
-            '- Do not re-send a message unless the send result reported an error; queued messages are delivered exactly once at the next session start.',
-          ].join('\n'),
-        })
-      } catch (error) { /* skill registration is best-effort */ }
-      if (disposeSkill !== undefined) ctx.effect(() => () => { try { disposeSkill() } catch (error) { /* best-effort */ } })
-    }
   },
 }
