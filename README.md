@@ -50,9 +50,9 @@ node scripts/install.mjs     # 复制到 $DSH_HOME，自动备份、幂等
 
 ## 截图
 
-界面截图存放于 `docs/screenshots/`（技能管理面板 / 插件管理面板 / 侧栏）。
-
-> 截图二进制尚未入库：待运行时侧生成后同步进 `docs/screenshots/`，README 将以相对路径引用。
+| 技能管理面板（两层视图） | 插件市场 | 侧栏（竖排） |
+| :---: | :---: | :---: |
+| ![skill-ui](docs/screenshots/skill-ui.png) | ![plugin-market](docs/screenshots/plugin-market.png) | ![sidebar](docs/screenshots/sidebar.png) |
 
 ## 目录
 
