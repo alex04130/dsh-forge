@@ -10,8 +10,8 @@ window.__ModuleLoader__.load({
     const css = [
       '[class$="_footerActions"] { flex-direction: column; align-items: stretch; gap: 2px; }',
       '[class*="collapsed"] [class$="_footerActions"] { align-items: center; }',
-      '.plugmgr-root{width:100%;box-sizing:border-box;flex:1 1 100%;min-width:0;display:flex;align-items:center;margin-top:8px;position:relative;flex:none}',
-      '.plugmgr-badge{box-sizing:border-box;width:100%;height:32px;display:flex;align-items:center;gap:8px;padding:0 8px 0 6px;border:none;border-radius:12px;cursor:pointer;font-size:14px;font-family:inherit;color:var(--dsw-alias-label-secondary,inherit);background:transparent}',
+      '.plugmgr-root{display:flex;align-items:center;flex:0 1 auto;min-width:0;position:relative;order:-1}',
+      '.plugmgr-badge{box-sizing:border-box;width:100%;height:49px;display:flex;align-items:center;gap:8px;padding:0 8px 0 6px;border:none;border-radius:12px;cursor:pointer;font-size:14px;font-family:inherit;color:var(--dsw-alias-label-primary,inherit);background:transparent}',
       '.plugmgr-badge:hover{background:var(--dsw-alias-bg-hover,rgba(128,128,128,.08))}',
       '.plugmgr-overlay{position:fixed;inset:0;z-index:1000;display:flex;justify-content:center;align-items:center}',
       '.plugmgr-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.42);backdrop-filter:blur(2px)}',
