@@ -1,0 +1,27 @@
+# 协作约定（Contributing）
+
+本仓库与 `~/.dsh` 运行时目录由多个会话并行维护，动手前请遵守以下规则。
+
+## 文件操作：先读后写
+
+- 修改任何现有文件前，**必须先用 read 工具读当前内容**（含行号），确认最新状态；禁止凭记忆或旧上下文直接覆盖。
+- edit 用精确锚点（old_string 逐字匹配）；批量替换脚本必须带断言（如 `assert old in code`），失败立即停止。
+- 改后立即自检：`npm run check`（host/client 代码语法）、`node --check scripts/*.mjs`、JSON 文件 parse 校验。
+- 改坏了从 git 历史恢复：`git show HEAD:<path>`，不要手搓重写。
+- 完整协议见持久技能 `file-edit-protocol`（本机 skillmanager 注册，模型 catalog 可见）。
+
+## 并行分工
+
+- **仓库侧**（本仓库：同步、commit、push、README、改名、GitHub 元信息）与 **运行时侧**（`~/.dsh`：代码、验证、截图、UI 迭代）并行开工，不串行等待。
+- 文件同步用**同步清单编号**（#N），每条列清楚：源路径 → 仓库路径 + 变更摘要。仓库侧按 idPrefix / 文件比对合并（逐字节 diff 确认未改动的条目不动）。
+- 动态插件运行态在 `~/.dsh/auto-plugins.json`，仓库只放清单；`bundle/plugins/`、`presets/`、`docs/` 以运行时侧文件为同步源。
+
+## 提交规范
+
+- Conventional Commits 中文消息：`类型(范围): 摘要` + 分条正文（逐文件/逐特性列出），类型如 `feat` / `fix` / `docs` / `chore` / `sync`。
+- 推送前确认工作区状态，push 用 ed25519 key（`GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes'`）。
+
+## 重启边界
+
+- cordis.patch.yml 插件、preset .mjs、auto-plugins.json 的改动需重启 DSH 生效；动态插件热更新需 `dev_stop_dyn_plugin <prefix>` 停旧实例（dynboot define 是一次性快照）。
+- 侧栏 UI：禁止在 React 插槽里搬 DOM（insertBefore 会拖垮 sidebar slot）；用纯 CSS `[class$="_footerActions"] { flex-direction: column }`。
