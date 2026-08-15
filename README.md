@@ -95,7 +95,7 @@ docs/       架构文档（注入方式对比、分层规则、锚定规则、ca
 
 ## 架构文档
 
-`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。另见 [工具描述规范（中文化）](docs/tool-descriptions.zh.md)。
+`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。另见 [工具描述规范（中文化）](docs/tool-descriptions.zh.md)、[工具详细定义参考](docs/tools-reference.zh.md)。
 
 ## 友情链接
 

@@ -145,13 +145,13 @@
   - **消息包裹（begin/end 标记）**：正文以 `[cross-session message from <发送方标题> (<发送方 id>)]` 开头、`[cross-session message end]` 结尾；发送方未知时标签为 `unknown`（`mailbridge.mjs:203-217`）。正文尾部的旧式结束标记（`[/cross-session message]`、`[cross-session message end]`）先用正则剥掉，避免标记叠加（`mailbridge.mjs:209`）。
   - **回复指引**：当能确定发送方 id 时，包裹末尾附中文提示——若消息要求回复，处理后须用 `session_send` 把结论发回给发送方会话而不是只写在本地（`mailbridge.mjs:214-216`）。
   - **双路径投递**：目标在内存注册表（`agents.get`）时即时投递——`status === 'running'` 走 `steer`，否则走 `followup`（`mailbridge.mjs:226-230`）；投递抛错则**静默降级**到持久排队（`mailbridge.mjs:232`）。
-  - **wake:true 冷启动**：从目标已持久化日志**倒序**找最近一条 `request/header` 事件里的 `config.provider`/`config.model`，带着这份 `agentOptions` 调 `agents.resume({resumeSessionId})`，让唤醒回合按目标上次的路由计费而不是全局默认（`mailbridge.mjs:234-252`）；resume 成功后同样 steer/followup 投递。注意：只带 provider/model，不带 reasoningEffort（待审校确认是否有意）。
+  - **wake:true 冷启动**：从目标已持久化日志**倒序**找最近一条 `request/header` 事件里的 `config.provider`/`config.model`，带着这份 `agentOptions` 调 `agents.resume({resumeSessionId})`，让唤醒回合按目标上次的路由计费而不是全局默认（`mailbridge.mjs:234-252`）；resume 成功后同样 steer/followup 投递。只带 provider/model 不带 reasoningEffort 是**有意为之**（运行时侧审校确认）：① `ResumeAgentOptions.agentOptions` 类型只有 provider/model/maxTokens 三个字段，没有 effort；② `agents.resume` 会加载持久化日志，effort 从该会话的 request/header 历史自然恢复；显式带 provider/model 是防全局默认覆盖的双保险。
   - **离线排队**：先 best-effort 校验会话 id 存在（不存在则报 unknown session id），再经写串行队列 `enqueue` 把 `{id, from, fromName, to, text: wrapped, ts}` 写入邮箱 `msg` 表（`mailbridge.mjs:266-279`）。投递发生在目标下次 `agent/session-start` 的监听器里（`mailbridge.mjs:305-330`），成功后删除、失败保留重试。
 - **边界与失败**：
   - `text` 为空串直接失败；wake 与排队路径互斥（wake 成功即返回）。
   - wake 时 `agents.resume` 不可用 → 落到普通排队路径（`mailbridge.mjs:234` 条件不满足即跳过）。
   - **在线 steer/followup 抛错后降级排队**：存在投递半成功也进队列、目标最终收到两份的风险（代码没有去重），标注「（待审校确认）」。
-  - **woke 路径的投递失败并不落队列**：`mailbridge.mjs:254-259` 的 catch 注释声称「message still queued below if delivery fails」，但 catch 之后无条件 `return delivered: 'woken'`，下方的排队代码不会执行——注释与实现不一致，标注「（待审校确认）」。
+  - **woke 路径投递失败的回退（sync #37 已修）**：原先 catch 注释声称「message still queued below if delivery fails」但 catch 后无条件 `return 'woken'`、排队代码不可达（丢消息 bug）。现行为：steer/followup 失败 → 重试一次 `followup`（steer 可能与唤醒回合竞争）→ 仍失败 → 落下方持久队列，不谎报 woken；resumed 未注册仍报错返回。
   - 存在性检查读目录失败时被吞掉，消息仍会照常排队（`mailbridge.mjs:270`）。
 - **关联**：`session_list` / `session_find`（取 id）、`mailbox_check`（收取端）、`session_read`；技能 `cross-session-mailbox`；队列投递依赖 mailbridge 的 `agent/session-start` 监听器。
 
