@@ -24,8 +24,15 @@ window.__ModuleLoader__.load({
       '.plugmgr-section{display:flex;align-items:center;gap:8px;margin:14px 0 8px;font-size:12px;font-weight:650;color:var(--dsw-alias-label-tertiary,#6b7280);text-transform:uppercase;letter-spacing:.04em}',
       '.plugmgr-section-count{font-size:11px;font-weight:500;color:var(--dsw-alias-label-tertiary,#9ca3af);text-transform:none;letter-spacing:0}',
       '.plugmgr-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#6b7280);margin-bottom:6px}',
-      '.plugmgr-search{box-sizing:border-box;width:100%;margin:2px 0 4px;border:1px solid rgba(128,128,128,.3);border-radius:10px;background:var(--dsw-alias-bg-layer-1,transparent);color:inherit;font-size:13px;font-family:inherit;padding:8px 12px}',
+      '.plugmgr-search{box-sizing:border-box;flex:1;min-width:0;margin:2px 0 4px;border:1px solid rgba(128,128,128,.3);border-radius:10px;background:var(--dsw-alias-bg-layer-1,transparent);color:inherit;font-size:13px;font-family:inherit;padding:8px 12px}',
       '.plugmgr-search:focus{outline:2px solid var(--dsw-alias-accent,#4f7cff);outline-offset:0;border-color:transparent}',
+      '.plugmgr-toolbar{display:flex;align-items:center;gap:8px;flex:none}',
+      '.plugmgr-chips{display:flex;align-items:center;gap:6px;flex:none;margin:2px 0 4px}',
+      '.plugmgr-chip{border:1px solid rgba(128,128,128,.25);background:transparent;color:var(--dsw-alias-label-secondary,inherit);border-radius:999px;height:26px;padding:0 11px;cursor:pointer;font-size:12px;font-family:inherit;white-space:nowrap}',
+      '.plugmgr-chip:hover{background:var(--dsw-alias-bg-hover,rgba(128,128,128,.08));border-color:rgba(128,128,128,.45)}',
+      '.plugmgr-chip-off{opacity:.45;cursor:default}',
+      '.plugmgr-chip-off:hover{background:transparent;border-color:rgba(128,128,128,.25)}',
+      '.plugmgr-copy{padding:0 9px;height:24px;border-radius:7px;font-size:11px}',
       '.plugmgr-sub{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#9ca3af);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.plugmgr-card{border:1px solid rgba(128,128,128,.16);border-radius:14px;padding:12px 14px;margin-bottom:10px;display:flex;flex-direction:column;gap:8px;background:var(--dsw-alias-bg-layer-1,transparent);transition:border-color .12s ease,box-shadow .12s ease}',
       '.plugmgr-card:hover{border-color:rgba(128,128,128,.34);box-shadow:0 3px 12px rgba(0,0,0,.06)}',
@@ -117,9 +124,16 @@ window.__ModuleLoader__.load({
     }
 
     function SectionTitle(props) {
-      return React.createElement('div', { className: 'plugmgr-section' },
+      return React.createElement('div', { className: 'plugmgr-section', id: props.anchor },
         props.title,
         React.createElement('span', { className: 'plugmgr-section-count' }, props.count))
+    }
+
+    function jumpTo(anchor) {
+      const el = document.getElementById(anchor)
+      if (el !== null && typeof el.scrollIntoView === 'function') {
+        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch (error) { el.scrollIntoView() }
+      }
     }
 
     function ManagerButton(props) {
@@ -213,15 +227,26 @@ window.__ModuleLoader__.load({
 
       const hostCard = (entry) => {
         const dot = fiberDot(entry.fiberPhase, entry.enabled)
-        const displayName = basenameOf(entry.moduleName)
+        const displayName = basenameOf(entry.moduleName).replace(/\.mjs$/, '')
         return React.createElement('div', { key: 'host:' + entry.entryId, className: 'plugmgr-card' },
           React.createElement('div', { className: 'plugmgr-card-head' },
             React.createElement('span', { className: 'plugmgr-name', title: entry.moduleName, style: { fontWeight: 600 } }, displayName),
-            React.createElement('span', { className: 'plugmgr-id', title: entry.entryId + ' — ' + entry.moduleName }, entry.entryId),
             React.createElement('span', { className: 'plugmgr-pill ' + (entry.enabled === false ? 'plugmgr-pill-off' : entry.fiberPhase === 'failed' ? 'plugmgr-pill-failed' : 'plugmgr-pill-active') },
               React.createElement('span', { className: 'plugmgr-pill-dot', style: { background: dot.color } }),
-              entry.enabled === false ? '已禁用' : entry.fiberPhase === 'failed' ? '挂载失败' : entry.fiberPhase === 'active' ? '已挂载' : entry.fiberPhase ?? '未知')),
-          React.createElement('div', { className: 'plugmgr-sub', title: entry.moduleName }, entry.moduleName))
+              entry.enabled === false ? '已禁用' : entry.fiberPhase === 'failed' ? '挂载失败' : entry.fiberPhase === 'active' ? '已挂载' : entry.fiberPhase ?? '未知'),
+            React.createElement('button', {
+              type: 'button',
+              className: 'plugmgr-btn plugmgr-copy',
+              title: '复制 patch 配置行',
+              onClick: () => {
+                const yaml = '- id: ' + entry.entryId + '\n  name: ' + JSON.stringify(entry.moduleName)
+                try {
+                  if (window.navigator !== undefined && typeof window.navigator.clipboard !== 'undefined' && typeof window.navigator.clipboard.writeText === 'function') window.navigator.clipboard.writeText(yaml).catch(() => {})
+                  else { window.prompt('复制以下配置行（写入 cordis.patch.yml）：', yaml) }
+                } catch (error) { window.prompt('复制以下配置行（写入 cordis.patch.yml）：', yaml) }
+              },
+            }, '复制配置')),
+          React.createElement('div', { className: 'plugmgr-sub', title: entry.entryId + ' — ' + entry.moduleName }, entry.entryId + '  ·  ' + entry.moduleName))
       }
 
       const hostLocalCards = localFiltered.map(hostCard)
@@ -287,28 +312,33 @@ window.__ModuleLoader__.load({
             React.createElement('button', { type: 'button', className: 'plugmgr-close', onClick: () => setOpen(false), 'aria-label': '关闭' }, React.createElement(CloseIcon, null))),
           error !== null ? React.createElement('div', { className: 'plugmgr-error' }, error) : null,
           React.createElement('div', { className: 'plugmgr-body' },
-            React.createElement('input', {
-              className: 'plugmgr-search',
-              type: 'search',
-              placeholder: '搜索插件名称 / id / 模块路径…',
-              value: query,
-              onChange: (e) => setQuery(e.target.value),
-            }),
-            React.createElement(SectionTitle, { title: '本地宿主插件', count: localFiltered.length + ' / ' + hostGroups.local.length }),
+            React.createElement('div', { className: 'plugmgr-toolbar' },
+              React.createElement('input', {
+                className: 'plugmgr-search',
+                type: 'search',
+                placeholder: '搜索插件名称 / id / 模块路径…',
+                value: query,
+                onChange: (e) => setQuery(e.target.value),
+              }),
+              React.createElement('div', { className: 'plugmgr-chips' },
+                React.createElement('button', { type: 'button', className: 'plugmgr-chip', onClick: () => jumpTo('plugmgr-sec-local') }, '本地 ' + localFiltered.length),
+                React.createElement('button', { type: 'button', className: 'plugmgr-chip' + (injectedFiltered.length === 0 ? ' plugmgr-chip-off' : ''), disabled: injectedFiltered.length === 0, onClick: () => jumpTo('plugmgr-sec-injected') }, '注入 ' + injectedFiltered.length),
+                React.createElement('button', { type: 'button', className: 'plugmgr-chip', onClick: () => jumpTo('plugmgr-sec-official') }, '官方 ' + hostGroups.official.length),
+                React.createElement('button', { type: 'button', className: 'plugmgr-chip', onClick: () => jumpTo('plugmgr-sec-dynamic') }, '动态 ' + (rows === null ? '…' : rows.length)))),
+            React.createElement(SectionTitle, { anchor: 'plugmgr-sec-local', title: '本地宿主插件', count: localFiltered.length + ' / ' + hostGroups.local.length }),
             React.createElement('div', { className: 'plugmgr-hint' }, '写在 cordis.patch.yml，随 dsh 启动加载；启用/停用需改配置并重启。'),
             hostEntries === null ? React.createElement('div', { className: 'plugmgr-hint' }, '读取 loader 清单中…') : (localFiltered.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, q !== '' ? '无匹配。' : '没有本地宿主插件。') : hostLocalCards),
-            React.createElement(SectionTitle, { title: '运行时注入', count: injectedFiltered.length + ' / ' + hostGroups.injected.length }),
+            React.createElement(SectionTitle, { anchor: 'plugmgr-sec-injected', title: '运行时注入', count: injectedFiltered.length + ' / ' + hostGroups.injected.length }),
             React.createElement('div', { className: 'plugmgr-hint' }, '经 dev_inject_plugin 注入，记录在 ~/.dsh/injector/registry.json，重启后自动恢复。'),
             injectedFiltered.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, q !== '' ? '无匹配。' : '没有运行时注入的插件。') : injectedCards,
-            React.createElement(SectionTitle, { title: '官方插件', count: officialFiltered.length + ' / ' + hostGroups.official.length }),
+            React.createElement(SectionTitle, { anchor: 'plugmgr-sec-official', title: '官方插件', count: officialFiltered.length + ' / ' + hostGroups.official.length }),
             React.createElement('button', { type: 'button', className: 'plugmgr-collapse', onClick: () => setShowOfficial((was) => !was) }, showOfficial === true ? '收起列表 ▲' : '展开列表 ▼'),
             officialRows,
-            React.createElement(SectionTitle, { title: '动态插件', count: rows === null ? '…' : rows.length + ' 个' }),
+            React.createElement(SectionTitle, { anchor: 'plugmgr-sec-dynamic', title: '动态插件', count: rows === null ? '…' : rows.length + ' 个' }),
             rows !== null && cards.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, '没有动态插件（重启后自动清空）') : null,
             cards),
           React.createElement('div', { className: 'plugmgr-footer' },
-            React.createElement('span', {}, '宿主插件随 dsh 启动加载；动态插件运行于 cordis-dynamic 分组'),
-            React.createElement('span', {}, '共 ' + (hostEntries === null ? 0 : hostEntries.length) + ' 个 loader 条目'))))
+            React.createElement('span', {}, '宿主插件随 dsh 启动加载；动态插件运行于 cordis-dynamic 分组 · ' + (hostEntries === null ? 0 : hostEntries.length) + ' 个 loader 条目'))))
 
       // Keep this entry on its OWN row: the sidebar footer stacks sibling
       // actions, so re-home our root right after the settings entry. Without
