@@ -44,6 +44,7 @@ const BUILTIN_SKILLS = [
       '',
       '## 何时使用',
       '- 先调 `session_list`：拿到真实会话 id 再对任何会话发消息。',
+      '- 只知道 id 或标题片段时，用 `session_find(query)` 按关键字查会话（省上下文，替代全量 session_list）。',
       '- `session_send(targetSessionId, text)`：把任务或问题交给另一个会话。`delivered: "live"` 表示对方已实时收进收件箱并被唤醒；`delivered: "queued"` 表示对方离线：消息被持久保存，在对方下次启动时自动送达（只送一次）。',
       '- `session_read(sessionId)`：发消息前先读对方近期日志，或收集对方的产出。',
       '- `mailbox_check()`：收取本会话离线期间其他会话发来的消息。',
@@ -142,9 +143,10 @@ function errText(error) {
 }
 
 export default {
-  inject: ['skills'],
+  inject: ['skills', 'systemPrompt'],
   apply(ctx) {
     const skills = ctx.skills
+    const systemPrompt = ctx.systemPrompt
     if (skills === undefined) return
     const owned = new Map() // name -> { registration, dispose, enabled }
 
@@ -194,10 +196,13 @@ export default {
       // Same-name first-wins: if another provider already registered this
       // name, keep OUR record's enabled state but never double-register.
       const dispose = skills.register(registration)
-      owned.set(s.name, { registration, dispose, enabled: s.enabled !== false })
+      const entry = { registration, dispose, enabled: s.enabled !== false, alwaysInject: s.alwaysInject === true, alwaysDispose: undefined }
+      owned.set(s.name, entry)
       if (s.enabled === false) {
         try { dispose() } catch (error) { /* best-effort */ }
-        owned.get(s.name).enabled = false
+        entry.enabled = false
+      } else if (entry.alwaysInject) {
+        try { entry.alwaysDispose = registerAlwaysSection(s) } catch (error) { console.error('[skillmanager] always-inject section failed for', s.name, ':', errText(error)) }
       }
     }
 
@@ -205,6 +210,19 @@ export default {
     // One implementation serves BOTH the model-facing tools (registered by
     // the skillui dynamic plugin) and the skillui RPC bridge: a single owned
     // Map, a single durable store, no competing registries.
+
+    // "Default-inject" mode: the skill's full content is also registered as a
+    // system-prompt section (always present, no skill-tool round trip needed).
+    // The section text carries a `<!-- forge-always-skill:<name> -->` marker
+    // so the router-standard preset can suppress it on its minimal first turn.
+    function registerAlwaysSection(s) {
+      if (systemPrompt === undefined) throw new Error('systemPrompt service unavailable')
+      return systemPrompt.section({
+        name: 'forge-always-skill:' + s.name,
+        order: 90,
+        text: '<!-- forge-always-skill:' + s.name + ' -->\n<skill_content name="' + s.name + '">\n' + s.content + '\n</skill_content>',
+      })
+    }
 
     function stateSnapshot() {
       return {
@@ -217,6 +235,7 @@ export default {
           modelInvocable: s.modelInvocable !== false,
           userInvocable: s.userInvocable !== false,
           content: s.content,
+          alwaysInject: s.alwaysInject === true,
           enabled: owned.get(s.name) !== undefined ? owned.get(s.name).enabled : (s.enabled !== false),
           managed: owned.has(s.name),
         })),
@@ -242,7 +261,11 @@ export default {
         source: 'runtime',
       }
       const dispose = skills.register(registration)
-      owned.set(name, { registration, dispose, enabled: true })
+      const entry = { registration, dispose, enabled: true, alwaysInject: args.alwaysInject === true, alwaysDispose: undefined }
+      owned.set(name, entry)
+      if (entry.alwaysInject) {
+        try { entry.alwaysDispose = registerAlwaysSection({ name, content }) } catch (error) { console.error('[skillmanager] always-inject section failed for', name, ':', errText(error)) }
+      }
       store.skills.push({
         name,
         description,
@@ -250,10 +273,11 @@ export default {
         modelInvocable: registration.invocation.modelInvocable,
         userInvocable: registration.invocation.userInvocable,
         content,
+        alwaysInject: entry.alwaysInject,
         enabled: true,
       })
       await persist()
-      return { ok: true, name, note: 'registered at the host (global) layer' }
+      return { ok: true, name, alwaysInject: entry.alwaysInject, note: 'registered at the host (global) layer' }
     }
 
     async function disableSkill(name) {
@@ -262,6 +286,10 @@ export default {
       if (entry.enabled) {
         try { entry.dispose() } catch (error) { return { ok: false, error: errText(error) } }
         entry.enabled = false
+      }
+      if (entry.alwaysDispose !== undefined) {
+        try { entry.alwaysDispose() } catch (error) { /* best-effort */ }
+        entry.alwaysDispose = undefined
       }
       const rec = store.skills.find((s) => s.name === name)
       if (rec !== undefined) rec.enabled = false
@@ -276,8 +304,14 @@ export default {
         entry.dispose = skills.register(entry.registration)
         entry.enabled = true
       }
-      const rec = store.skills.find((s) => s.name === name)
-      if (rec !== undefined) rec.enabled = true
+      if (entry.alwaysInject && entry.alwaysDispose === undefined) {
+        const rec = store.skills.find((s) => s.name === name)
+        if (rec !== undefined) {
+          try { entry.alwaysDispose = registerAlwaysSection(rec) } catch (error) { console.error('[skillmanager] always-inject section failed for', name, ':', errText(error)) }
+        }
+      }
+      const rec2 = store.skills.find((s) => s.name === name)
+      if (rec2 !== undefined) rec2.enabled = true
       await persist()
       return { ok: true, name, enabled: true }
     }
@@ -288,10 +322,32 @@ export default {
       if (entry.enabled) {
         try { entry.dispose() } catch (error) { return { ok: false, error: errText(error) } }
       }
+      if (entry.alwaysDispose !== undefined) {
+        try { entry.alwaysDispose() } catch (error) { /* best-effort */ }
+        entry.alwaysDispose = undefined
+      }
       owned.delete(name)
       store.skills = store.skills.filter((s) => s.name !== name)
       await persist()
       return { ok: true, name, removed: true }
+    }
+
+    async function setInject(name, alwaysInject) {
+      const entry = owned.get(name)
+      if (entry === undefined) return { ok: false, error: `skill "${name}" is not managed by skillmanager` }
+      const rec = store.skills.find((s) => s.name === name)
+      if (rec === undefined) return { ok: false, error: `skill "${name}" has no store record` }
+      entry.alwaysInject = alwaysInject === true
+      if (entry.alwaysDispose !== undefined) {
+        try { entry.alwaysDispose() } catch (error) { /* best-effort */ }
+        entry.alwaysDispose = undefined
+      }
+      if (entry.alwaysInject && entry.enabled) {
+        try { entry.alwaysDispose = registerAlwaysSection(rec) } catch (error) { console.error('[skillmanager] always-inject section failed for', name, ':', errText(error)) }
+      }
+      rec.alwaysInject = entry.alwaysInject
+      await persist()
+      return { ok: true, name, alwaysInject: entry.alwaysInject }
     }
 
     // RPC bridge for the skillui dynamic plugin. Its host half injects this
@@ -303,6 +359,7 @@ export default {
       disable: async (args) => disableSkill(String(args?.name ?? '')),
       enable: async (args) => enableSkill(String(args?.name ?? '')),
       remove: async (args) => removeSkill(String(args?.name ?? '')),
+      setInject: async (args) => setInject(String(args?.name ?? ''), args?.alwaysInject === true),
     })
 
     // ── restart auto-restore ────────────────────────────────────────────────

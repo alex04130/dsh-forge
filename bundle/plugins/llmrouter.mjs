@@ -44,7 +44,7 @@ export default {
     }
 
     registerTool('model_list',
-      'List every LLM provider route registered in this DSH process and the models each route advertises, plus a reverse index (byModel: which providers serve each model id). Use it to pick a `provider`/`model` pair for `model_call` or `spawn_model_subagent`, or to check whether a vendor or model is configured. Providers are configured via the llm-pi-ai settings section (baseURL/api/apiKeyEnv/models); API keys resolve from the credential store per request.',
+      'List every LLM provider route registered in this DSH process and the models each route advertises, plus a reverse index (byModel: which providers serve each model id). Use it to pick a `provider`/`model` pair for `model_call` or `spawn_model_subagent`, or to check whether a vendor or model is configured. Providers are configured via the llm-pi-ai settings section (baseURL/api/apiKeyEnv/models); API keys resolve from the credential store per request. See the `model-delegation` skill for usage rules.',
       {},
       async () => {
         const providers = llm.listProviders().map((p) => ({ id: p.id, name: p.name }))
@@ -70,7 +70,7 @@ export default {
       })
 
     registerTool('model_call',
-      'Call a model from another provider (or the same one) as a one-shot, text-only completion and return its complete reply as this tool call\'s result. This is NOT task delegation and NOT a subagent: the delegate model gets one turn, cannot call tools, and only returns text; the main model stays in control and digests the reply. Use it for a bounded text task (translate, summarize, classify, second opinion). Pick `provider`/`model` via `model_list`. Nested tool calling is unsupported: give the delegate everything it needs in the prompt and system text.',
+      'Call a model from another provider (or the same one) as a one-shot, text-only completion and return its complete reply as this tool call\'s result. This is NOT task delegation and NOT a subagent: the delegate model gets one turn, cannot call tools, and only returns text; the main model stays in control and digests the reply. Use it for a bounded text task (translate, summarize, classify, second opinion). Pick `provider`/`model` via `model_list`. Nested tool calling is unsupported: give the delegate everything it needs in the prompt and system text. See the `model-delegation` skill for usage rules.',
       {
         provider: { type: 'string', required: true, description: 'Provider route id, e.g. "deepseek-official" or "kimi-coding" (see model_list).' },
         model: { type: 'string', required: true, description: 'Model id on that provider, e.g. "k3".' },

@@ -149,7 +149,12 @@ export function apply(ctx, config) {
       const src = m.source
       if (src === null || typeof src !== 'object') return false
       if (src.kind === 'agent-instructions') return src.baseline === true
-      return src.kind === 'skill-catalog' || src.kind === 'skill-invocation'
+      if (src.kind === 'skill-catalog' || src.kind === 'skill-invocation') return true
+      // forge always-inject skill sections (system-prompt sections registered
+      // by skillmanager carrying the marker) are standing rules — keep them out
+      // of the minimal first-turn anchor too; restored after the first tool call.
+      const blocks = Array.isArray(m.content) ? m.content : []
+      return blocks.some((b) => b !== null && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string' && b.text.includes('<!-- forge-always-skill:'))
     }
     const messages = Array.isArray(decision.messages)
       ? decision.messages.filter((m) => !isFirstTurnSuppressed(m))

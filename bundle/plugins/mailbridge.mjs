@@ -134,7 +134,7 @@ export default {
     }
 
     registerTool('session_list',
-      'List sessions in this DSH process (live and persisted) with their ids, titles, and live status. Use it to find a target session id before `session_send`, or to see which sessions exist for cross-session coordination.',
+      'List sessions in this DSH process (live and persisted) with their ids, titles, and live status. Use it to find a target session id before `session_send`, or to see which sessions exist for cross-session coordination. See the `cross-session-mailbox` skill for the full workflow.',
       { limit: { type: 'number', description: 'Maximum sessions to return (default 50, cap 200).' } },
       async (args, exec) => {
         const cap = typeof args.limit === 'number' && args.limit > 0 ? Math.min(Math.floor(args.limit), 200) : 50
@@ -153,7 +153,7 @@ export default {
       })
 
     registerTool('session_read',
-      'Read the recent message log of another session (exact reads only): user, assistant, and tool messages with their text, oldest first. Use it to understand what another session is doing before messaging it, or to collect its results.',
+      'Read the recent message log of another session (exact reads only): user, assistant, and tool messages with their text, oldest first. Use it to understand what another session is doing before messaging it, or to collect its results. See the `cross-session-mailbox` skill for the full workflow.',
       {
         sessionId: { type: 'string', required: true, description: 'Target session id from session_list.' },
         maxEvents: { type: 'number', description: 'Maximum events returned (default 20, cap 500).' },
@@ -190,7 +190,7 @@ export default {
       })
 
     registerTool('session_send',
-      'Send a message to another session in this DSH process. A live target receives it in its inbox immediately and wakes; otherwise the message is queued durably and delivered the next time that session starts. The recipient sees the text prefixed with `[cross-session message from <session name> (<sessionId>)]`.',
+      'Send a message to another session in this DSH process. A live target receives it in its inbox immediately and wakes; otherwise the message is queued durably and delivered the next time that session starts. The recipient sees the text prefixed with `[cross-session message from <session name> (<sessionId>)]`. See the `cross-session-mailbox` skill for the full workflow.',
       {
         targetSessionId: { type: 'string', required: true, description: 'Target session id from session_list.' },
         text: { type: 'string', required: true, description: 'Message body for the target session.' },
@@ -241,7 +241,7 @@ export default {
       })
 
     registerTool('mailbox_check',
-      'Check and consume cross-session messages queued for THIS session (messages sent while it was not live). Returns the messages and removes them from the durable queue; call it when the user asks whether other sessions sent anything.',
+      'Check and consume cross-session messages queued for THIS session (messages sent while it was not live). Returns the messages and removes them from the durable queue; call it when the user asks whether other sessions sent anything. See the `cross-session-mailbox` skill for the full workflow.',
       {},
       async (args, exec) => {
         const me = callerId(exec, agents)
