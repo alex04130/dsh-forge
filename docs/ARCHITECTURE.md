@@ -117,7 +117,8 @@ gitdk（disabled）、modpk、modlpk、imgsub、**sklui**（skill 管理器：6 
 
 ### 客户端面板（UI 层）
 - `@local/dsh-plugmgr`（插件市场）：**自主发现**——host/注入/官方三类经 `remote.pluginInventory.list()`（loader 条目：`entryId/moduleName/enabled/fiberPhase`）按模块名前缀分类（`./`、`@local/` = 本地；`@deepseek-ai/`、`cordis:` = 官方；其余 = 注入），不再硬编码。
-- **sidebar.footer.action 同行坑**：侧栏底部 sibling actions 默认横向堆叠。每个面板 root 必须挂 `ref` 并在 `useEffect` 里向上找 `className` 含 `settings` 的兄弟、把自己 `insertBefore` 到其之后——否则按钮与官方 cordis 按钮挤在同一行（plugmgr 与 sklui 均已内置该重排）。
+- **sidebar.footer.action 同行坑（终局方案）**：官方 foot 结构 = `footArea(column) > [footerActions(row) + settingsArea]`；所有 action 与 cordis-panel 挤在 footerActions 一个 row 里，Settings 在独立容器。**绝对不要在 useEffect 里把 DOM 节点搬出 React 插槽容器**——三个面板都做"搬到 settings 之后"时互相 insertBefore 引用失效，NotFoundError 拖垮整个 sidebar slot（侧栏全白）。正确解法是纯 CSS 改容器方向：`[class$="_footerActions"] { flex-direction: column; align-items: stretch; gap: 2px; }`——按钮在官方容器内竖排（cordis → 技能 → 插件 → 市场 → Settings），零 DOM 操作、React 无感知。
+- **停运行中的动态插件**：`dynamicCordisRunner.stopFromPanel(agent, pluginId)` 第一参数是 **Agent 对象**（经 `ctx.get('agents').get(sessionId)` 解析），不是 sessionId 字符串——传字符串静默无效。dynboot 的 define 是一次性快照，改 auto-plugins.json 不覆盖内存中的旧 package；须 stop 旧实例，重启后 dynboot 用新代码重新 define。
 - `@local/*` client.js 改动后：client-hmr 会 re-hash bundle，**刷新页面**即可生效（无需重启）；skillui 这类 `auto-plugins.json` 条目需重启 DSH（dynboot 恢复）。
 
 ### 软打断
