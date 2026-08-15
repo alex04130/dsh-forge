@@ -1,6 +1,6 @@
 // description: 代理团队（team_*）：队长 + 角色成员 + 依赖任务板，成员间可直接互发消息。
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { collectModelEscalations, collectPresetEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
+import { collectModelEscalations, collectPresetEscalations, collectSandboxEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
 
 let idCounter = 0
 function makeId(prefix) {
@@ -43,6 +43,7 @@ export default {
     const presets = ctx.get('agentPresets')
     const approval = ctx.get('approval')
     const llm = ctx.get('llm')
+    const sandboxPolicy = ctx.get('sandboxPolicy')
     const timer = ctx.get('timer')
 
     // team_wait 挂起注册表：成员调用 team_wait 后回合挂起，直到目标成员的
@@ -151,6 +152,7 @@ export default {
       const explicitModel = typeof spec.model === 'string' && spec.model.trim() !== '' ? spec.model.trim() : undefined
       const explicitEffort = typeof spec.reasoningEffort === 'string' && spec.reasoningEffort.trim() !== '' ? spec.reasoningEffort.trim() : undefined
       const modeId = typeof spec.mode === 'string' && spec.mode.trim() !== '' ? spec.mode.trim() : undefined
+      const sandboxMode = typeof spec.sandbox === 'string' && spec.sandbox.trim() !== '' ? spec.sandbox.trim() : undefined
 
       const route = policy.liveRoute(agent)
       const parentHeader = agent.session?.requestHeader?.()
@@ -159,6 +161,11 @@ export default {
       const childModel = explicitModel ?? parentModel
       const childProvider = explicitProvider ?? route.provider
       const effort = explicitEffort ?? parentHeader?.config?.reasoningEffort
+      let parentSandbox = undefined
+      if (sandboxPolicy !== undefined && typeof sandboxPolicy.overrideOf === 'function') {
+        try { parentSandbox = sandboxPolicy.overrideOf(agent.session) } catch (error) { parentSandbox = undefined }
+      }
+      if (parentSandbox === undefined) parentSandbox = sandboxPolicy !== undefined ? sandboxPolicy.defaultMode : undefined
 
       if (explicitEffort !== undefined && childProvider !== undefined && childModel !== undefined) {
         const check = await validateEffort(llm, childProvider, childModel, explicitEffort)
@@ -168,6 +175,7 @@ export default {
       const escalations = [
         ...collectModelEscalations(parentModel, childModel),
         ...(await collectPresetEscalations({ parentPreset, targetPreset: modeId, presets })),
+        ...collectSandboxEscalations(parentSandbox, sandboxMode),
       ]
       if (escalations.length > 0) {
         if (approval === undefined) {
@@ -195,6 +203,7 @@ export default {
         parentId: agent.id,
         ...(modeId !== undefined ? { mode: modeId } : {}),
         ...(effort !== undefined && typeof effort === 'string' ? { effort } : {}),
+        ...(sandboxMode !== undefined ? { sandbox: sandboxMode } : {}),
       })
       let started
       try {
@@ -236,6 +245,7 @@ export default {
               model: { type: 'string', description: '可选模型 id。' },
               reasoningEffort: { type: 'string', description: '可选思考强度。' },
               mode: { type: 'string', description: '可选模式 id。' },
+              sandbox: { type: 'string', description: '可选沙箱模式（read-only | workspace-write | danger-full-access）；比队长更宽的写权限会请求审批。' },
             },
           },
         },
@@ -341,6 +351,7 @@ export default {
         model: { type: 'string', description: '可选的成员模型 id；省略则继承队长当前模型。' },
         reasoningEffort: { type: 'string', description: '可选的成员思考强度；省略则继承队长当前强度。' },
         mode: { type: 'string', description: '可选的成员模式 id（如 "router-standard"、"cordis"）；省略则继承队长组合。' },
+        sandbox: { type: 'string', description: '可选的成员沙箱模式（"read-only" | "workspace-write" | "danger-full-access"）；比队长更宽的写权限会请求审批。' },
       },
       async (args, exec) => {
         const captain = callerId(exec, agents)
@@ -374,6 +385,7 @@ export default {
               model: { type: 'string', description: '可选模型 id。' },
               reasoningEffort: { type: 'string', description: '可选思考强度。' },
               mode: { type: 'string', description: '可选模式 id。' },
+              sandbox: { type: 'string', description: '可选沙箱模式（read-only | workspace-write | danger-full-access）；比队长更宽的写权限会请求审批。' },
             },
           },
         },
