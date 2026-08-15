@@ -21,9 +21,9 @@ export default {
 
     const modeTool = defineTool({
       name: 'session_mode',
-      description: 'Show which agent preset (mode) a session currently runs. Live sessions read the composed preset from their context; persisted offline sessions read the last agent-preset/selected event from their log. Use it to confirm what mode THIS session, a subagent, or any other session is running.',
+      description: '显示某会话当前运行的模式（agent preset）。在线会话从自身上下文读取组合后的模式；已持久化的离线会话从其日志读取最近一次 agent-preset/selected 事件。用于确认本会话、某个子代理或任何其他会话当前处于什么模式。',
       parameters: {
-        sessionId: { type: 'string', description: 'Target session id. Omit to query the calling session.' },
+        sessionId: { type: 'string', description: '目标会话 id。省略则查询调用方会话。' },
       },
       output: {
         schema: { type: 'string' },
@@ -58,9 +58,9 @@ export default {
 
     const tool = defineTool({
       name: 'switch_mode',
-      description: 'Switch THIS session to another agent preset (mode) mid-session; the switch applies from the next step, when the new preset supplies the tool catalog and prompt. Switching to a preset that grants capabilities the current one lacks (a permission increase) asks the user for confirmation and cancels unless allowed; equal-or-fewer capabilities proceed without asking. The target preset must exist and mount cleanly, otherwise the call fails and nothing changes. Caveats: prior logged tool calls stay readable only if the new preset defines the same tools; plan-mode state does not carry over. This tool is mounted in the host composition and stays available after the switch.',
+      description: '会话中途把本会话切换到另一个模式（agent preset）；切换从下一步生效，届时新模式提供工具目录和提示词。切换到授予当前模式所缺能力（权限增加）的模式会请求用户确认，未获允许则取消；能力相同或更少则直接执行，无需询问。目标模式必须存在且能干净挂载，否则调用失败且一切不变。注意事项：此前记录的工具调用只有在新模式定义了相同工具时才保持可读；计划模式状态不会延续。本工具挂在主机组合中，切换后依然可用。',
       parameters: {
-        presetId: { type: 'string', required: true, description: 'Preset id to switch to, e.g. "cordis", "code", "standard", or a user-authored preset id.' },
+        presetId: { type: 'string', required: true, description: '要切换到的模式 id，如 "cordis"、"code"、"standard" 或用户自建的模式 id。' },
       },
       output: {
         schema: { type: 'string' },

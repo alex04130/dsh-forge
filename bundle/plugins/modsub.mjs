@@ -39,14 +39,14 @@ export default {
 
     const tool = defineTool({
       name: 'spawn_model_subagent',
-      description: 'Spawn a durable, continuable subagent session that inherits this session\'s composition (same tools, same workspace) and, by default, the parent\'s `provider`/`model`/`reasoningEffort`/`mode` (agent preset), so billing never silently changes. Passing any of these explicitly overrides only that axis: an explicit `model` alone keeps the parent\'s provider. Escalation — a higher model tier in the same series, a cross-series model change, or a target preset whose plugin-row capability face is not a subset of the parent\'s — asks the user for approval and cancels unless allowed; equal-or-lower tiers and equal-or-fewer capabilities proceed without asking. See `model_list` for available provider/model pairs. The returned childId is the child session id: the user can open it in the GUI and send screenshots/text to it, and the child reports its final answer back to this session.',
+      description: '派发一个可续子代理会话，继承本会话的组合（相同工具、相同工作区），且默认继承父级的 `provider`/`model`/`reasoningEffort`/`mode`（agent preset），因此计费不会悄悄改变。显式传入其中任意一项只覆盖该维度：单独显式传 `model` 时仍保留父级 provider。提权——同系列内更高模型档位、跨系列换模型，或插件行能力面不是父级子集的目标模式——会请求用户审批，未获允许则取消；同档或更低档、能力相同或更少则直接执行，无需询问。可用 provider/model 组合见 `model_list`。返回的 childId 就是子会话 id：用户可在 GUI 中打开它并向它发截图/文本，子会话会把最终答案回报给本会话。',
       parameters: {
-        prompt: { type: 'string', required: true, description: 'The complete mission for the child agent (it sees nothing from this conversation).' },
-        label: { type: 'string', description: 'Short display label for the child session.' },
-        provider: { type: 'string', description: 'Optional explicit provider route for the child; omit to inherit the parent\'s provider (recommended — billing stays on the same route). See `model_list` for route ids.' },
-        model: { type: 'string', description: 'Optional explicit model id for the child; omit to inherit the parent\'s current model. See `model_list` for available models.' },
-        reasoningEffort: { type: 'string', description: 'Optional explicit reasoning effort for the child (provider-specific id, e.g. "low"/"medium"/"high"); omit to inherit the parent\'s current effort.' },
-        mode: { type: 'string', description: 'Optional agent preset id for the child (e.g. "router-standard", "cordis"); omit to inherit the parent\'s composition.' },
+        prompt: { type: 'string', required: true, description: '子代理的完整任务（它看不到本对话的任何内容）。' },
+        label: { type: 'string', description: '子会话的简短显示标签。' },
+        provider: { type: 'string', description: '可选的子会话供应商路由；省略则继承父级供应商（推荐——计费保持在同一条路由上）。路由 id 见 `model_list`。' },
+        model: { type: 'string', description: '可选的子会话模型 id；省略则继承父级当前模型。可用模型见 `model_list`。' },
+        reasoningEffort: { type: 'string', description: '可选的子会话思考强度（供应商专属 id，如 "low"/"medium"/"high"）；省略则继承父级当前强度。' },
+        mode: { type: 'string', description: '可选的子会话模式 id（如 "router-standard"、"cordis"）；省略则继承父级组合。' },
       },
       output: {
         schema: { type: 'string' },

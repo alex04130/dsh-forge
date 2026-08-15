@@ -197,8 +197,8 @@ export default {
     }
 
     registerTool('model_taxonomy',
-      'Show the model-series taxonomy (series, tier keywords) and classify one model id.',
-      { model: { type: 'string', description: 'Optional model id to classify into a series and tier.' } },
+      '显示模型系列分类（系列、档位关键词）并对一个模型 id 归类。',
+      { model: { type: 'string', description: '要归入某系列和档位的模型 id。' } },
       async (args) => {
         const summary = Object.entries(series).map(([name, spec]) => ({
           series: name,
@@ -213,7 +213,7 @@ export default {
       })
 
     registerTool('model_route_status',
-      'Show the current agent route and, for subagents, the parent live route it is clamped to.',
+      '显示当前代理路由；对子代理，显示它被钳制到的父级在线路由。',
       {},
       async (_args, exec) => {
         const agent = exec.agent

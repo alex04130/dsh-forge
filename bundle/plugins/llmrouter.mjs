@@ -44,7 +44,7 @@ export default {
     }
 
     registerTool('model_list',
-      'List every LLM provider route registered in this DSH process and the models each route advertises, plus a reverse index (byModel: which providers serve each model id). Use it to pick a `provider`/`model` pair for `model_call` or `spawn_model_subagent`, or to check whether a vendor or model is configured. Providers are configured via the llm-pi-ai settings section (baseURL/api/apiKeyEnv/models); API keys resolve from the credential store per request. See the `model-delegation` skill for usage rules.',
+      '列出本 DSH 进程中注册的每条 LLM 供应商路由及其提供的模型，外加一个反向索引（byModel：每个模型 id 由哪些供应商提供）。用于为 `model_call` 或 `spawn_model_subagent` 挑选 `provider`/`model` 组合，或检查某供应商/模型是否已配置。供应商通过 llm-pi-ai 设置项配置（baseURL/api/apiKeyEnv/models）；API 密钥按请求从凭据存储解析。用法规则见 `model-delegation` 技能。',
       {},
       async () => {
         const providers = llm.listProviders().map((p) => ({ id: p.id, name: p.name }))
@@ -70,15 +70,15 @@ export default {
       })
 
     registerTool('model_call',
-      'Call a model from another provider (or the same one) as a one-shot, text-only completion and return its complete reply as this tool call\'s result. This is NOT task delegation and NOT a subagent: the delegate model gets one turn, cannot call tools, and only returns text; the main model stays in control and digests the reply. Use it for a bounded text task (translate, summarize, classify, second opinion). Pick `provider`/`model` via `model_list`. Nested tool calling is unsupported: give the delegate everything it needs in the prompt and system text. See the `model-delegation` skill for usage rules.',
+      '以一次性、纯文本补全的方式调用另一供应商（或同一供应商）的模型，并把它的完整回复作为本次工具调用的结果返回。这不是任务委派，也不是子代理：被借调模型只得到一个回合，不能调用工具，只返回文本；主模型始终掌控并消化回复。用于有边界的文本任务（翻译、摘要、分类、第二意见）。通过 `model_list` 挑选 `provider`/`model`。不支持嵌套工具调用：把被借调模型需要的一切都放进 prompt 和 system 文本里。用法规则见 `model-delegation` 技能。',
       {
-        provider: { type: 'string', required: true, description: 'Provider route id, e.g. "deepseek-official" or "kimi-coding" (see model_list).' },
-        model: { type: 'string', required: true, description: 'Model id on that provider, e.g. "k3".' },
-        prompt: { type: 'string', required: true, description: 'The task text for the delegate model.' },
-        system: { type: 'string', description: 'Optional system instruction.' },
-        history: { type: 'array', description: 'Optional prior turns as [{role:"user"|"assistant", text}].' },
-        maxTokens: { type: 'number', description: 'Optional output token cap.' },
-        reasoningEffort: { type: 'string', description: 'Optional provider-specific effort id.' },
+        provider: { type: 'string', required: true, description: '供应商路由 id，如 "deepseek-official" 或 "kimi-coding"（见 model_list）。' },
+        model: { type: 'string', required: true, description: '该供应商上的模型 id，如 "k3"。' },
+        prompt: { type: 'string', required: true, description: '给被借调模型的任务文本。' },
+        system: { type: 'string', description: '可选系统指令。' },
+        history: { type: 'array', description: '可选先前回合，形如 [{role:"user"|"assistant", text}]。' },
+        maxTokens: { type: 'number', description: '可选输出 token 上限。' },
+        reasoningEffort: { type: 'string', description: '可选的供应商专属 effort id（思考强度）。' },
       },
       async (args, exec) => {
         const provider = String(args.provider)

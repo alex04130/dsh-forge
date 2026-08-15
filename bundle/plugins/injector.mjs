@@ -262,8 +262,8 @@ export default {
     }
 
     registerTool('dev_inject_plugin',
-      'Runtime-inject a local plugin package into the running web profile (no restart, no patch/bundles change). `dir` must contain a package.json with a `name` and a `dsh`/bundle declaration; Host tools and client UI both take effect.',
-      { dir: { type: 'string', required: true, description: 'Absolute path to the plugin package directory.' } },
+      '把本地插件包运行时注入到正在运行的 web profile（无需重启，不改 patch/打包产物）。`dir` 必须包含一个带 `name` 和 `dsh`/bundle 声明的 package.json；Host 工具和客户端 UI 都会生效。',
+      { dir: { type: 'string', required: true, description: '插件包目录的绝对路径。' } },
       async (args) => {
         const dir = String(args.dir ?? '').trim()
         if (dir.length === 0) return jsonText({ ok: false, error: 'dir is required' })
@@ -271,8 +271,8 @@ export default {
       })
 
     registerTool('dev_uninject_plugin',
-      'Uninject a runtime-injected plugin package: fiber disposed, symlink removed, registry entry dropped. No restart needed.',
-      { name: { type: 'string', required: true, description: 'Plugin package name (or a substring of it).' } },
+      '取消注入一个运行时注入的插件包：fiber 被释放、符号链接移除、注册表条目删除。无需重启。',
+      { name: { type: 'string', required: true, description: '插件包名（或其子串）。' } },
       async (args) => {
         const name = String(args.name ?? '').trim()
         if (name.length === 0) return jsonText({ ok: false, error: 'name is required' })
@@ -285,7 +285,7 @@ export default {
       })
 
     registerTool('dev_injected_list',
-      'List every runtime-injected plugin package (name + source directory).',
+      '列出每个运行时注入的插件包（名称 + 源目录）。',
       {},
       async () => {
         await registryReady
@@ -293,8 +293,8 @@ export default {
       })
 
     registerTool('dev_reload_package',
-      'Re-create an injected plugin entry (dispose fiber + re-import). NOTE: the Node ESM module cache is not cleared yet, so edited file content may not change until the loader clears its cache.',
-      { name: { type: 'string', required: true, description: 'Plugin package name.' } },
+      '重建一个注入的插件条目（释放 fiber + 重新导入）。注意：Node ESM 模块缓存尚未清除，因此编辑过的文件内容可能要到加载器清掉缓存后才生效。',
+      { name: { type: 'string', required: true, description: '插件包名。' } },
       async (args) => {
         const name = String(args.name ?? '').trim()
         if (name.length === 0) return jsonText({ ok: false, error: 'name is required' })
@@ -302,7 +302,7 @@ export default {
       })
 
     registerTool('dev_plugin_status',
-      'Show the injector registry plus every live loader entry (id + name + disabled state).',
+      '显示注入器注册表以及每个在线 loader 条目（id + 名称 + 禁用状态）。',
       {},
       async () => {
         await registryReady

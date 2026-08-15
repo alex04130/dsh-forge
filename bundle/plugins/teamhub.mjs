@@ -113,10 +113,10 @@ export default {
     }
 
     registerTool('team_create',
-      'Create an agent team with YOU (the calling session) as captain (lead); one captain leads one team at a time. Then use `team_add_member` to add members, `team_create_task` to split work with dependencies, and `team_send_message` to talk to members. Load the agent-teamwork skill before orchestrating a team: it covers team design, workflow, and when to communicate.',
+      '创建一个以你（调用会话）为队长的代理团队；一个队长同一时间只带领一个团队。之后用 `team_add_member` 添加成员、`team_create_task` 按依赖拆分任务、`team_send_message` 与成员交流。编排团队前先加载 agent-teamwork 技能：它涵盖团队设计、工作流和何时该沟通。',
       {
-        name: { type: 'string', required: true, description: 'Short team name, e.g. "migration-squad".' },
-        goal: { type: 'string', description: 'One-line team goal, delivered to members.' },
+        name: { type: 'string', required: true, description: '简短团队名，如 "migration-squad"。' },
+        goal: { type: 'string', description: '一行团队目标，送达各成员。' },
       },
       async (args, exec) => {
         const captain = callerId(exec, agents)
@@ -144,15 +144,15 @@ export default {
       })
 
     registerTool('team_add_member',
-      'Add a team member: spawns a durable, continuable subagent session with the given role and mission prompt (the member inherits this session\'s composition, including the team tools). The member id you choose becomes its address for `team_send_message`. Like `spawn_model_subagent`, optional `provider`/`model`/`reasoningEffort`/`mode` overrides inherit from the captain by default, and any escalation (higher model tier, cross-series model, or a preset whose plugin-row capability face is not a subset of the captain\'s) asks the user for approval. Load the agent-teamwork skill for the full workflow.',
+      '添加团队成员：派发一个带指定角色和任务提示词的可续子代理会话（成员继承本会话的组合，包括团队工具）。你选的成员 id 就是 `team_send_message` 发给它的地址。与 `spawn_model_subagent` 一样，可选的 `provider`/`model`/`reasoningEffort`/`mode` 覆盖默认继承队长；任何提权（更高的模型档位、跨系列换模型，或插件行能力面不是队长子集的模式）都会请求用户审批。完整工作流见 agent-teamwork 技能。',
       {
-        memberId: { type: 'string', required: true, description: 'Short member id/name, e.g. "researcher" or "alice".' },
-        role: { type: 'string', required: true, description: 'Role description, e.g. "frontend reviewer".' },
-        prompt: { type: 'string', required: true, description: 'Initial mission for the member (delivered as its first message).' },
-        provider: { type: 'string', description: 'Optional explicit provider route for the member; omit to inherit the captain\'s provider.' },
-        model: { type: 'string', description: 'Optional explicit model id for the member; omit to inherit the captain\'s current model.' },
-        reasoningEffort: { type: 'string', description: 'Optional explicit reasoning effort for the member; omit to inherit the captain\'s current effort.' },
-        mode: { type: 'string', description: 'Optional agent preset id for the member (e.g. "router-standard", "cordis"); omit to inherit the captain\'s composition.' },
+        memberId: { type: 'string', required: true, description: '简短成员 id/名字，如 "researcher" 或 "alice"。' },
+        role: { type: 'string', required: true, description: '角色描述，如 "frontend reviewer"。' },
+        prompt: { type: 'string', required: true, description: '成员的初始任务（作为其第一条消息送达）。' },
+        provider: { type: 'string', description: '可选的成员供应商路由；省略则继承队长的供应商。' },
+        model: { type: 'string', description: '可选的成员模型 id；省略则继承队长当前模型。' },
+        reasoningEffort: { type: 'string', description: '可选的成员思考强度；省略则继承队长当前强度。' },
+        mode: { type: 'string', description: '可选的成员模式 id（如 "router-standard"、"cordis"）；省略则继承队长组合。' },
       },
       async (args, exec) => {
         const captain = callerId(exec, agents)
@@ -225,12 +225,12 @@ export default {
       })
 
     registerTool('team_create_task',
-      'Split team work into a task; optionally declare dependencies (task ids that must be completed first) and an assignee (member id; unassigned tasks wait in the claimable pool). Load the agent-teamwork skill for the full workflow.',
+      '把团队工作拆成一个任务；可选声明依赖（必须先完成的任务 id）和指派人（成员 id；未指派的任务留在可认领池里等待）。完整工作流见 agent-teamwork 技能。',
       {
-        title: { type: 'string', required: true, description: 'Short task title.' },
-        description: { type: 'string', description: 'What the task requires and its acceptance criteria.' },
-        assignee: { type: 'string', description: 'Member id to assign, or omit for the claimable pool.' },
-        dependencies: { type: 'array', description: 'Task ids that must be completed first.' },
+        title: { type: 'string', required: true, description: '简短任务标题。' },
+        description: { type: 'string', description: '任务要求及验收标准。' },
+        assignee: { type: 'string', description: '要指派的成员 id，省略则进入可认领池。' },
+        dependencies: { type: 'array', description: '必须先完成的任务 id。' },
       },
       async (args, exec) => {
         const captain = callerId(exec, agents)
@@ -266,10 +266,10 @@ export default {
       })
 
     registerTool('team_claim_task',
-      'Claim a pending task for a member (or unassign it back to pending). All dependencies must be completed first. The captain may claim for anyone; a member may claim only for itself or an unassigned task. Load the agent-teamwork skill for the full workflow.',
+      '为成员认领一个待处理任务（或取消认领退回待处理）。所有依赖必须已完成。队长可为任何人认领；成员只能为自己或未指派任务认领。完整工作流见 agent-teamwork 技能。',
       {
-        taskId: { type: 'string', required: true, description: 'Task id, e.g. "t1".' },
-        memberId: { type: 'string', description: 'Member claiming the task; omitted means the caller (captain or member).' },
+        taskId: { type: 'string', required: true, description: '任务 id，如 "t1"。' },
+        memberId: { type: 'string', description: '认领任务的成员；省略表示调用者（队长或成员）。' },
       },
       async (args, exec) => {
         const me = callerId(exec, agents)
@@ -311,11 +311,11 @@ export default {
       })
 
     registerTool('team_update_task',
-      'Advance a task status (claimed -> in_progress -> completed | failed | cancelled) and optionally record its output. Members update their own tasks; the captain may update any. Load the agent-teamwork skill for the full workflow.',
+      '推进任务状态（claimed → in_progress → completed | failed | cancelled）并可选记录其输出。成员更新自己的任务；队长可更新任何任务。完整工作流见 agent-teamwork 技能。',
       {
-        taskId: { type: 'string', required: true, description: 'Task id, e.g. "t1".' },
-        status: { type: 'string', required: true, description: 'New status: claimed | in_progress | completed | failed | cancelled.' },
-        output: { type: 'string', description: 'Result text to store (put the deliverable or a summary here).' },
+        taskId: { type: 'string', required: true, description: '任务 id，如 "t1"。' },
+        status: { type: 'string', required: true, description: '新状态：claimed | in_progress | completed | failed | cancelled。' },
+        output: { type: 'string', description: '要存储的结果文本（交付物或摘要放这里）。' },
       },
       async (args, exec) => {
         const me = callerId(exec, agents)
@@ -351,10 +351,10 @@ export default {
       })
 
     registerTool('team_send_message',
-      'Send a message to the captain or another member. A live recipient receives it in its inbox immediately and wakes; otherwise it is queued durably and delivered at its next session start. The sender is always the calling session (no spoofing). Check the agent-teamwork skill for when to communicate.',
+      '给队长或另一成员发消息。在线接收方立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。发送方永远是调用会话（不可伪造）。何时该沟通见 agent-teamwork 技能。',
       {
-        to: { type: 'string', required: true, description: 'Recipient: a member id or "captain".' },
-        text: { type: 'string', required: true, description: 'Message body.' },
+        to: { type: 'string', required: true, description: '接收方：成员 id 或 "captain"。' },
+        text: { type: 'string', required: true, description: '消息正文。' },
       },
       async (args, exec) => {
         const me = callerId(exec, agents)
@@ -421,7 +421,7 @@ export default {
       })
 
     registerTool('team_status',
-      'Full team picture: members with live status, the task board with dependencies and outputs, and messages queued in YOUR inbox. Poll it to collect member output and decide the next step. Load the agent-teamwork skill for the full workflow.',
+      '团队全貌：成员及其在线状态、带依赖和输出的任务板、以及排在你收件箱里的消息。轮询它以收集成员输出并决定下一步。完整工作流见 agent-teamwork 技能。',
       {},
       async (args, exec) => {
         const me = callerId(exec, agents)
@@ -467,7 +467,7 @@ export default {
       })
 
     registerTool('team_delete',
-      'End the team: best-effort interrupt live members, then archive the team record (tasks, dependency graph, and member list stay available for review). Load the agent-teamwork skill for the full workflow.',
+      '结束团队：尽力打断在线成员，然后归档团队记录（任务、依赖图和成员列表保留供回顾）。完整工作流见 agent-teamwork 技能。',
       {},
       async (args, exec) => {
         const captain = callerId(exec, agents)

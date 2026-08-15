@@ -134,8 +134,8 @@ export default {
     }
 
     registerTool('session_list',
-      'List sessions in this DSH process (live and persisted) with their ids, titles, and live status. Prefer `session_find` whenever you know an id or title fragment — the full roster is expensive in context in large processes; use `session_list` only when you need the full roster. See the `cross-session-mailbox` skill for the full workflow.',
-      { limit: { type: 'number', description: 'Maximum sessions to return (default 50, cap 200).' } },
+      '列出本 DSH 进程中的会话（在线与已持久化），含 id、标题和在线状态。只要知道 id 或标题片段就优先用 `session_find`——大进程中完整名册很耗上下文；只有确实需要完整名册时才用 `session_list`。完整工作流见 `cross-session-mailbox` 技能。',
+      { limit: { type: 'number', description: '最大返回会话数（默认 50，上限 200）。' } },
       async (args, exec) => {
         const cap = typeof args.limit === 'number' && args.limit > 0 ? Math.min(Math.floor(args.limit), 200) : 50
         const [ids, titles] = await Promise.all([listSessionIds(), readTitles()])
@@ -153,10 +153,10 @@ export default {
       })
 
     registerTool('session_read',
-      'Read the recent message log of another session (exact reads only): user, assistant, and tool messages with their text, oldest first. Use it to understand what another session is doing before messaging it, or to collect its results. See the `cross-session-mailbox` skill for the full workflow.',
+      '读取另一会话的近期消息日志（仅精确读取）：用户、助手和工具消息及其文本，按时间从旧到新。用于给某会话发消息前了解它在做什么，或收集它的结果。完整工作流见 `cross-session-mailbox` 技能。',
       {
-        sessionId: { type: 'string', required: true, description: 'Target session id from session_list.' },
-        maxEvents: { type: 'number', description: 'Maximum events returned (default 20, cap 500).' },
+        sessionId: { type: 'string', required: true, description: '目标会话 id（来自 session_list）。' },
+        maxEvents: { type: 'number', description: '最大返回事件数（默认 20，上限 500）。' },
       },
       async (args, exec) => {
         const sessionId = String(args.sessionId)
@@ -190,11 +190,11 @@ export default {
       })
 
     registerTool('session_send',
-      'Send a message to another session in this DSH process. A live target receives it in its inbox immediately and wakes; otherwise the message is queued durably and delivered the next time that session starts. With `wake: true` an offline target is COLD-RESUMED right now (its persisted log is loaded, the session restarts and processes the message immediately) instead of waiting for its next manual start — use it to force a sleeping session to work now; it consumes model turns on the target. The recipient sees the text prefixed with `[cross-session message from <session name> (<sessionId>)]`. See the `cross-session-mailbox` skill for the full workflow.',
+      '向本 DSH 进程中的另一会话发送消息。在线目标会立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。`wake: true` 时离线目标立即冷启动（加载其已持久化日志，会话重启并立刻处理该消息），而不是等它下次手动启动——用于强制睡眠中的会话现在就干活；会消耗目标会话的模型回合。接收方看到的文本带 `[cross-session message from <session name> (<sessionId>)]` 前缀。完整工作流见 `cross-session-mailbox` 技能。',
       {
-        targetSessionId: { type: 'string', required: true, description: 'Target session id from session_list.' },
-        text: { type: 'string', required: true, description: 'Message body for the target session.' },
-        wake: { type: 'boolean', description: 'Force-wake an offline target: cold-resume it from its persisted log and deliver immediately (default false = durable queue). Consumes model turns on the target session.' },
+        targetSessionId: { type: 'string', required: true, description: '目标会话 id（来自 session_list）。' },
+        text: { type: 'string', required: true, description: '目标会话的消息正文。' },
+        wake: { type: 'boolean', description: '是否强制唤醒离线目标：从其已持久化日志冷启动并立即送达（默认 false = 持久排队）。会消耗目标会话的模型回合。' },
       },
       async (args, exec) => {
         const targetId = String(args.targetSessionId)
@@ -274,7 +274,7 @@ export default {
       })
 
     registerTool('mailbox_check',
-      'Check and consume cross-session messages queued for THIS session (messages sent while it was not live). Returns the messages and removes them from the durable queue; call it when the user asks whether other sessions sent anything. See the `cross-session-mailbox` skill for the full workflow.',
+      '检查并消费排给本会话的跨会话消息（本会话不在线期间发来的消息）。返回消息并从持久队列中移除；用户问其他会话是否发过什么时调用。完整工作流见 `cross-session-mailbox` 技能。',
       {},
       async (args, exec) => {
         const me = callerId(exec, agents)
