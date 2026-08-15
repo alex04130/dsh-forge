@@ -96,21 +96,31 @@ export default {
           if (explicitProvider !== undefined) agentOptions.provider = explicitProvider
           if (explicitModel !== undefined) agentOptions.model = explicitModel
 
-          const started = await subagents.startContinuable({
-            provider: 'spawn',
-            label: label.length > 0 ? label : (childModel + ' 子代理'),
-            request: {
-              prompt: [{ type: 'text', text: prompt }],
-              parent: agent,
-              ...(Object.keys(agentOptions).length > 0 ? { agentOptions } : {}),
-            },
-            signal: exec !== undefined ? exec.signal : undefined,
-          })
-
-          policy.register(started.childId, {
+          // Stage mode/effort BEFORE the spawn: startContinuable dispatches
+          // agent/created synchronously before resolving, so a post-await
+          // register is always too late (see subagent-policy timing contract).
+          const staged = policy.prepare({
+            parentId: agent.id,
             ...(modeId !== undefined ? { mode: modeId } : {}),
             ...(effort !== undefined && typeof effort === 'string' ? { effort } : {}),
           })
+
+          let started
+          try {
+            started = await subagents.startContinuable({
+              provider: 'spawn',
+              label: label.length > 0 ? label : (childModel + ' 子代理'),
+              request: {
+                prompt: [{ type: 'text', text: prompt }],
+                parent: agent,
+                ...(Object.keys(agentOptions).length > 0 ? { agentOptions } : {}),
+              },
+              signal: exec !== undefined ? exec.signal : undefined,
+            })
+          } catch (error) {
+            staged.cancel()
+            throw error
+          }
 
           return jsonText({
             ok: true,
