@@ -1,6 +1,6 @@
 // description: 代理团队（team_*）：队长 + 角色成员 + 依赖任务板，成员间可直接互发消息。
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { collectModelEscalations, collectPresetEscalations, installChildPolicy } from './lib/subagent-policy.mjs'
+import { collectModelEscalations, collectPresetEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
 
 let idCounter = 0
 function makeId(prefix) {
@@ -42,6 +42,7 @@ export default {
     const skills = ctx.get('skills')
     const presets = ctx.get('agentPresets')
     const approval = ctx.get('approval')
+    const llm = ctx.get('llm')
     const timer = ctx.get('timer')
 
     // team_wait 挂起注册表：成员调用 team_wait 后回合挂起，直到目标成员的
@@ -156,7 +157,13 @@ export default {
       const parentPreset = presets !== undefined ? presets.composedPreset(agent.ctx) : undefined
       const parentModel = route.model ?? parentHeader?.config?.model
       const childModel = explicitModel ?? parentModel
+      const childProvider = explicitProvider ?? route.provider
       const effort = explicitEffort ?? parentHeader?.config?.reasoningEffort
+
+      if (explicitEffort !== undefined && childProvider !== undefined && childModel !== undefined) {
+        const check = await validateEffort(llm, childProvider, childModel, explicitEffort)
+        if (check.ok === false) return { ok: false, memberId, error: check.error }
+      }
 
       const escalations = [
         ...collectModelEscalations(parentModel, childModel),

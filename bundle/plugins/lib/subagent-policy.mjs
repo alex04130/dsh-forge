@@ -120,6 +120,26 @@ export function collectModelEscalations(parentModel, childModel) {
   return []
 }
 
+// ── effort validation ──────────────────────────────────────────────────────
+// An explicit reasoningEffort that the target route does not declare fails
+// SILENTLY at request time (the child produces no output and no closing
+// message). Validate before spawning so callers get a loud, actionable error.
+export async function validateEffort(llm, provider, model, effort) {
+  if (llm === undefined || typeof llm.resolveModelInfo !== 'function') return { ok: true, note: 'effort enum unavailable; host will validate at request time' }
+  try {
+    const info = await llm.resolveModelInfo(provider, model)
+    const efforts = info !== null && info !== undefined && info.reasoning !== null && info.reasoning !== undefined ? info.reasoning.efforts : undefined
+    if (!Array.isArray(efforts) || efforts.length === 0) return { ok: true, note: 'effort enum unknown for this route; host will validate at request time' }
+    const ids = efforts.map((e) => (e !== null && typeof e === 'object' ? e.id : undefined)).filter((id) => typeof id === 'string')
+    if (!ids.includes(effort)) {
+      return { ok: false, error: 'unsupported reasoningEffort "' + effort + '" for ' + provider + '/' + model + '; supported: ' + ids.join(', ') }
+    }
+    return { ok: true }
+  } catch (error) {
+    return { ok: true, note: 'effort enum lookup failed (' + String(error && error.message ? error.message : error) + '); host will validate at request time' }
+  }
+}
+
 // ── child-side mode / effort injection ─────────────────────────────────────
 // Applies an explicit preset to a freshly created child BEFORE its first
 // prompt assembly (first agent/pre-step, prepend) and pins its reasoning
