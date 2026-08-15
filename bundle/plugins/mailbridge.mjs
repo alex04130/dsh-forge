@@ -252,13 +252,26 @@ export default {
             await agents.resume({ resumeSessionId: targetId, ...(agentOptions !== undefined ? { agentOptions } : {}) })
             const resumed = agents.get(targetId)
             if (resumed !== undefined) {
+              let delivered = false
               try {
                 if (typeof resumed.status === 'string' && resumed.status === 'running') resumed.steer(message)
                 else resumed.followup(message)
-              } catch (error) { /* message still queued below if delivery fails */ }
-              return jsonText({ ok: true, delivered: 'woken', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName, agentOptions: agentOptions ?? null })
+                delivered = true
+              } catch (error) {
+                // One retry through the ordinary followup path (steer may race
+                // the waking turn); a second failure falls through to the
+                // durable queue below instead of losing the message.
+                try {
+                  resumed.followup(message)
+                  delivered = true
+                } catch (retryError) { /* fall through to the durable queue */ }
+              }
+              if (delivered) {
+                return jsonText({ ok: true, delivered: 'woken', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName, agentOptions: agentOptions ?? null })
+              }
+            } else {
+              return jsonText({ ok: false, error: 'session resumed but did not register; message not delivered', targetSessionId: targetId })
             }
-            return jsonText({ ok: false, error: 'session resumed but did not register; message not delivered', targetSessionId: targetId })
           } catch (error) {
             return jsonText({ ok: false, error: 'wake failed: ' + errText(error), targetSessionId: targetId })
           }
