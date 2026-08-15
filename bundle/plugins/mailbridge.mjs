@@ -86,6 +86,34 @@ export default {
     const storage = ctx.storage
     const skills = ctx.get('skills')
 
+    // wake 守卫（P0-4，security review t7-H3）：冷启动任意离线会话会消耗
+    // 目标会话的模型回合并按目标的高档路由计费——限制为仅主会话可用，
+    // 并对每个目标会话限频（滑动窗口），封堵"被注入子代理循环唤醒烧预算"链。
+    function isMainSession(exec) {
+      if (exec === undefined || exec.agent === undefined) return false
+      let header = undefined
+      try { header = exec.agent.session !== undefined ? exec.agent.session.header : undefined } catch (error) { header = undefined }
+      const origin = header !== undefined ? header.origin : undefined
+      const parent = header !== undefined ? header.parentSession : undefined
+      if (origin === 'subagent' || (typeof parent === 'string' && parent.length > 0)) return false
+      return true
+    }
+    const WAKE_WINDOW_MS = 60000
+    const WAKE_LIMIT = 3
+    const wakeTimes = new Map()
+    function checkWakeAllowed(exec, targetId) {
+      if (!isMainSession(exec)) return { ok: false, error: 'wake is restricted to the main session (subagents cannot cold-start sessions)' }
+      const now = Date.now()
+      const kept = (wakeTimes.get(targetId) ?? []).filter((t) => now - t < WAKE_WINDOW_MS)
+      if (kept.length >= WAKE_LIMIT) {
+        wakeTimes.set(targetId, kept)
+        return { ok: false, error: 'wake rate limit exceeded for this target (' + WAKE_LIMIT + ' per ' + Math.round(WAKE_WINDOW_MS / 1000) + 's); wait before waking again' }
+      }
+      kept.push(now)
+      wakeTimes.set(targetId, kept)
+      return { ok: true }
+    }
+
     let unit = undefined
     let openError = undefined
     const opening = (async () => {
@@ -232,6 +260,8 @@ export default {
           } catch (error) { /* fall through to the durable queue */ }
         }
         if (args.wake === true && typeof agents.resume === 'function') {
+          const wakeCheck = checkWakeAllowed(exec, targetId)
+          if (wakeCheck.ok === false) return jsonText({ ok: false, error: wakeCheck.error })
           try {
             // Reuse the session's last logged route so the waking turn bills
             // the same provider/model instead of the global default.
