@@ -21,6 +21,14 @@
 - Conventional Commits 中文消息：`类型(范围): 摘要` + 分条正文（逐文件/逐特性列出），类型如 `feat` / `fix` / `docs` / `chore` / `sync`。
 - 推送前确认工作区状态，push 用 ed25519 key（`GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes'`）。
 
+## 分支工作流（版本管理）
+
+- `master` 为稳定发布分支；`dev` 为功能验证分支。
+- 新功能/大改先合入 `dev`，在 dev 上完成运行时验证（重启、截图、回归），稳定后再合并回 `master` 并发布。
+- 日常小修（同步清单驱动的微改）可直推 `master`，但涉及新特性或行为变更的一律走 dev。
+- 合并流程：`git checkout master && git merge dev`（或 GitHub PR dev→master）；发布时在 master 上打 tag（如 `v0.1.0`）。
+- 分支保护规则需在 GitHub 网页侧设置（Settings → Branches → Branch protection rules：master 与 dev 均建议开启「require pull request」由仓库侧/运行时侧互相 review）；本机无 gh CLI，暂以本约定为准。
+
 ## 重启边界
 
 - cordis.patch.yml 插件、preset .mjs、auto-plugins.json 的改动需重启 DSH 生效；动态插件热更新需 `dev_stop_dyn_plugin <prefix>` 停旧实例（dynboot define 是一次性快照）。
