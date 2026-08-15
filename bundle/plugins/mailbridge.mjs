@@ -134,7 +134,7 @@ export default {
     }
 
     registerTool('session_list',
-      'List sessions in this DSH process (live and persisted) with their ids, titles, and live status. Use it to find a target session id before `session_send`, or to see which sessions exist for cross-session coordination. See the `cross-session-mailbox` skill for the full workflow.',
+      'List sessions in this DSH process (live and persisted) with their ids, titles, and live status. Prefer `session_find` whenever you know an id or title fragment — the full roster is expensive in context in large processes; use `session_list` only when you need the full roster. See the `cross-session-mailbox` skill for the full workflow.',
       { limit: { type: 'number', description: 'Maximum sessions to return (default 50, cap 200).' } },
       async (args, exec) => {
         const cap = typeof args.limit === 'number' && args.limit > 0 ? Math.min(Math.floor(args.limit), 200) : 50

@@ -68,6 +68,21 @@ function addedNames(currentNames, targetNames) {
   return targetNames.filter((name) => !have.has(name))
 }
 
+// ── preset permission levels ──────────────────────────────────────────────
+// Escalation is judged FIRST by this permission ladder (a spawn into a
+// higher-privilege preset always asks the user), then by plugin-row diffs
+// as a fallback for presets absent from the table. cordis (创造) owns the
+// plugin-authoring surface (cordis_*/dev_* etc.) and sits on top; code is
+// the coding preset; standard and router-standard are the SAME standard
+// tier (router-standard only adds first-turn routing on top); minimal is
+// the read-only floor. Unknown preset ids default to the middle level (2).
+const PRESET_LEVELS = { cordis: 4, code: 3, standard: 2, 'router-standard': 2, minimal: 1 }
+
+function presetLevel(id) {
+  if (typeof id !== 'string' || id === '') return 0
+  return PRESET_LEVELS[id] ?? 2
+}
+
 // ── spawn_model_subagent v2 ──────────────────────────────────────────────
 // Subagent spawning with explicit mode / reasoning-effort / provider / model
 // controls. Defaults INHERIT the parent (same provider, same model, same
@@ -95,6 +110,7 @@ export default {
     const effortByChild = new Map() // childSessionId -> reasoningEffort (explicit or parent snapshot)
     const modeByChild = new Map() // childSessionId -> presetId to re-compose
     const disposers = new Map() // agentId -> agent/request disposer
+    const preStepDisposers = new Map() // agentId -> first pre-step recompose disposer
 
     function liveRoute(parent) {
       const header = parent.session?.requestHeader?.()
@@ -105,9 +121,10 @@ export default {
       return { provider: parent.options?.provider, model: parent.options?.model, reasoningEffort: undefined }
     }
 
-    // Re-compose freshly created children to an explicit preset, and inject
-    // the child's reasoning effort on every model request. Runs at
-    // `agent/created` (publication), before the first prompt assembly.
+    // Re-compose freshly created children to an explicit preset. The
+    // re-composition happens in the child's FIRST pre-step (prepend), i.e.
+    // before its first prompt assembly, so the very first model request
+    // already runs under the requested preset — not a later step.
     ctx.on('agent/created', ({ agent }) => {
       if (agent === undefined || agent.ctx === undefined) return
       const sid = agent.session?.id
@@ -116,9 +133,21 @@ export default {
       const modeId = modeByChild.get(sid)
       if (modeId !== undefined && presets !== undefined) {
         modeByChild.delete(sid)
-        presets.recompose(agent.ctx, modeId).then((preset) => {
-          try { agent.session.append('agent-preset/selected', { agentPreset: preset.id }) } catch (error) { /* durable record is best-effort */ }
-        }).catch((error) => console.error('[modsub] child preset recompose failed for', sid, ':', errText(error)))
+        try {
+          const preStepOff = agent.ctx.on('agent/pre-step', async (_payload, next) => {
+            try { preStepOff() } catch (error) { /* best-effort */ }
+            try {
+              const preset = await presets.recompose(agent.ctx, modeId)
+              try { agent.session.append('agent-preset/selected', { agentPreset: preset.id }) } catch (error) { /* durable record is best-effort */ }
+            } catch (error) {
+              console.error('[modsub] child preset recompose failed for', sid, ':', errText(error))
+            }
+            return next()
+          }, { prepend: true })
+          preStepDisposers.set(agent.id, preStepOff)
+        } catch (error) {
+          console.error('[modsub] failed to install preset re-composition for', sid, ':', errText(error))
+        }
       }
 
       const effort = effortByChild.get(sid)
@@ -144,6 +173,11 @@ export default {
       if (off !== undefined) {
         try { off() } catch (error) { /* best-effort */ }
         disposers.delete(agent.id)
+      }
+      const pso = preStepDisposers.get(agent?.id)
+      if (pso !== undefined) {
+        try { pso() } catch (error) { /* best-effort */ }
+        preStepDisposers.delete(agent.id)
       }
     })
 
@@ -198,15 +232,23 @@ export default {
             }
           }
 
-          // preset capability increase
+          // preset permission increase: judged FIRST on the preset permission
+          // ladder (low -> high privilege always asks), then on plugin-row
+          // diffs as a fallback for presets outside the ladder.
           let added = []
           if (modeId !== undefined && parentPreset !== undefined && modeId !== parentPreset && presets !== undefined) {
-            try {
-              const currentNames = pluginNames(await presets.read(parentPreset))
-              const targetNames = pluginNames(await presets.read(modeId))
-              added = addedNames(currentNames, targetNames)
-              if (added.length > 0) escalations.push('preset upgrade: "' + parentPreset + '" -> "' + modeId + '" adds capabilities: ' + added.slice(0, 8).join(', '))
-            } catch (error) { /* comparison is best-effort; spawning still validates the target */ }
+            const parentLevel = presetLevel(parentPreset)
+            const targetLevel = presetLevel(modeId)
+            if (targetLevel > parentLevel) {
+              escalations.push('preset permission upgrade: "' + parentPreset + '" (level ' + parentLevel + ') -> "' + modeId + '" (level ' + targetLevel + ')')
+            } else {
+              try {
+                const currentNames = pluginNames(await presets.read(parentPreset))
+                const targetNames = pluginNames(await presets.read(modeId))
+                added = addedNames(currentNames, targetNames)
+                if (added.length > 0) escalations.push('preset upgrade: "' + parentPreset + '" -> "' + modeId + '" adds capabilities: ' + added.slice(0, 8).join(', '))
+              } catch (error) { /* comparison is best-effort; spawning still validates the target */ }
+            }
           }
 
           if (escalations.length > 0) {
