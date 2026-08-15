@@ -44,6 +44,18 @@ node scripts/install.mjs     # 复制到 $DSH_HOME，自动备份、幂等
 
 或手动对照 `bundle/`、`dynamic/`、`presets/` 目录复制；npm 包形态：`dsh plugin --profile web add <path>/bundle`。
 
+### 可选：GitHub MCP 工具（mcp__github__*）
+
+`bundle/cordis.patch.yml` 内置 mcp-github 条目，依赖本地运行时目录 `~/.dsh/mcp/github-server/`
+（不进仓库）。安装（本机 npm 全局/缓存目录可能只读，故指定 `--cache /tmp/npm-cache`）：
+
+```sh
+npm install --prefix ~/.dsh/mcp/github-server --cache /tmp/npm-cache \
+  --no-bin-links --no-package-lock @modelcontextprotocol/server-github
+```
+
+token 由 DSH 进程环境变量 `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_TOKEN` 提供，配置文件不落密钥。
+
 ## 验证
 
 `npm run check`（全部 host/client 代码语法自检）。运行时验证：`dev_plugin_status`（注入器）、`skill_list`（技能）、`model_taxonomy`（路由）、`dev_router_status`（思维模式路由）。

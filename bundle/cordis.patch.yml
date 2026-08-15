@@ -60,8 +60,8 @@
       config:
         transport: stdio
         serverName: github
-        command: npx
-        args: ['-y', '@modelcontextprotocol/server-github']
+        command: node
+        args: ['/home/alex/.dsh/mcp/github-server/node_modules/@modelcontextprotocol/server-github/dist/index.js']
         env:
           GITHUB_PERSONAL_ACCESS_TOKEN: !!js process.env.GITHUB_PERSONAL_ACCESS_TOKEN || process.env.GITHUB_TOKEN || ''
         cwd: /home/alex/.dsh
