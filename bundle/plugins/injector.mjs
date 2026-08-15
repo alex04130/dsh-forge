@@ -145,6 +145,19 @@ export default {
   apply(ctx) {
     const loader = ctx.loader
 
+    // Plugin-injection management is a host-control surface: restrict the
+    // management tools to non-subagent sessions (a prompt-injected subagent
+    // must not be able to load arbitrary code — security review t7-H1).
+    function isMainSession(exec) {
+      if (exec === undefined || exec.agent === undefined) return false
+      let header = undefined
+      try { header = exec.agent.session !== undefined ? exec.agent.session.header : undefined } catch (error) { header = undefined }
+      const origin = header !== undefined ? header.origin : undefined
+      const parent = header !== undefined ? header.parentSession : undefined
+      if (origin === 'subagent' || (typeof parent === 'string' && parent.length > 0)) return false
+      return true
+    }
+
     // Self-description lookup for the plugin-manager panel (plugmgr fetches
     // /dsh-forge/plugin-descriptions and renders each plugin's own summary).
     ctx.effect(() => registerDescriptionsRoute(ctx.webServer, loader) ?? (() => {}))
@@ -262,18 +275,20 @@ export default {
     }
 
     registerTool('dev_inject_plugin',
-      '把本地插件包运行时注入到正在运行的 web profile（无需重启，不改 patch/打包产物）。`dir` 必须包含一个带 `name` 和 `dsh`/bundle 声明的 package.json；Host 工具和客户端 UI 都会生效。',
+      '把本地插件包运行时注入到正在运行的 web profile（无需重启，不改 patch/打包产物）。`dir` 必须包含一个带 `name` 和 `dsh`/bundle 声明的 package.json；Host 工具和客户端 UI 都会生效。仅主会话可用（子代理拒绝）。',
       { dir: { type: 'string', required: true, description: '插件包目录的绝对路径。' } },
-      async (args) => {
+      async (args, exec) => {
+        if (!isMainSession(exec)) return jsonText({ ok: false, error: 'restricted to the main session (subagents cannot manage plugin injection)' })
         const dir = String(args.dir ?? '').trim()
         if (dir.length === 0) return jsonText({ ok: false, error: 'dir is required' })
         return jsonText(await inject(dir))
       })
 
     registerTool('dev_uninject_plugin',
-      '取消注入一个运行时注入的插件包：fiber 被释放、符号链接移除、注册表条目删除。无需重启。',
+      '取消注入一个运行时注入的插件包：fiber 被释放、符号链接移除、注册表条目删除。无需重启。仅主会话可用（子代理拒绝）。',
       { name: { type: 'string', required: true, description: '插件包名（或其子串）。' } },
-      async (args) => {
+      async (args, exec) => {
+        if (!isMainSession(exec)) return jsonText({ ok: false, error: 'restricted to the main session (subagents cannot manage plugin injection)' })
         const name = String(args.name ?? '').trim()
         if (name.length === 0) return jsonText({ ok: false, error: 'name is required' })
         await registryReady
@@ -293,9 +308,10 @@ export default {
       })
 
     registerTool('dev_reload_package',
-      '重建一个注入的插件条目（释放 fiber + 重新导入）。注意：Node ESM 模块缓存尚未清除，因此编辑过的文件内容可能要到加载器清掉缓存后才生效。',
+      '重建一个注入的插件条目（释放 fiber + 重新导入）。注意：Node ESM 模块缓存尚未清除，因此编辑过的文件内容可能要到加载器清掉缓存后才生效。仅主会话可用（子代理拒绝）。',
       { name: { type: 'string', required: true, description: '插件包名。' } },
-      async (args) => {
+      async (args, exec) => {
+        if (!isMainSession(exec)) return jsonText({ ok: false, error: 'restricted to the main session (subagents cannot manage plugin injection)' })
         const name = String(args.name ?? '').trim()
         if (name.length === 0) return jsonText({ ok: false, error: 'name is required' })
         return jsonText(await reload(name))
