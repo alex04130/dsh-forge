@@ -202,7 +202,10 @@ export default {
         const fromName = await callerName(from)
         const senderLabel = fromName !== null ? fromName + ' (' + from + ')' : (from ?? 'unknown')
         const prefix = '[cross-session message from ' + senderLabel + ']'
-        const wrapped = prefix + '\n\n' + body + '\n\n[/cross-session message]'
+        // Strip any legacy end marker the sender may have copied into the body,
+        // so the wrap never doubles up.
+        const cleanBody = body.replace(/(\n*\s*(?:\[\/cross-session message\]|\[cross-session message end\])\s*)+$/, '')
+        const wrapped = prefix + '\n\n' + cleanBody + '\n\n[cross-session message end]'
         const message = {
           id: makeId('m'),
           role: 'user',

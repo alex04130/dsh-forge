@@ -340,7 +340,8 @@ export default {
           }
           if (targetSession === undefined) return jsonText({ ok: false, error: 'recipient "' + to + '" is not part of your team' })
           const prefix = '[team message from ' + me + ']'
-          const wrapped = prefix + '\n\n' + text + '\n\n[/team message]'
+          const cleanText = text.replace(/(\n*\s*(?:\[\/team message\]|\[team message end\])\s*)+$/, '')
+          const wrapped = prefix + '\n\n' + cleanText + '\n\n[team message end]'
           const message = {
             id: makeId('m'),
             role: 'user',
