@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({
 
     const css = [
       '[class$="_footerActions"] { flex-direction: column; align-items: stretch; gap: 4px; }',
-      '[class$="_footerActions"] > [class$="_layer"] { margin: 0; min-height: 49px; }',
+      '[class$="_footerActions"] > [class$="_layer"] { margin: 12px 0 0 0; min-height: 49px; }',
       '[class$="_footerActions"] button { color: var(--dsw-alias-label-primary, inherit); }',
       '[class$="_footerActions"] button { transition: background .12s ease; border-radius: 8px !important; }',
       '[class$="_footerActions"] button:hover { background: rgba(0,0,0,.05) !important; }',
@@ -68,16 +68,19 @@ window.__ModuleLoader__.load({
     ].join('\n')
 
     function PlugIcon() {
+      // lucide wrench (ISC): intentionally a wrench — "extensions = tools".
       return React.createElement('svg', {
         width: 14,
         height: 14,
-        viewBox: '0 0 16 16',
+        viewBox: '0 0 24 24',
         fill: 'none',
         'aria-hidden': 'true',
       }, React.createElement('path', {
-        d: 'M6.5 3.5a2 2 0 1 1 3 0V5H11a1.5 1.5 0 0 1 1.5 1.5V8h1.5a2 2 0 1 1 0 3H12.5v1.5A1.5 1.5 0 0 1 11 14H9.5v-1.5a2 2 0 1 0-3 0V14H5a1.5 1.5 0 0 1-1.5-1.5V11H2a2 2 0 1 1 0-3h1.5V6.5A1.5 1.5 0 0 1 5 5h1.5V3.5z',
+        d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z',
         stroke: 'currentColor',
-        strokeWidth: 1.4,
+        strokeWidth: 2,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
       }))
     }
 
