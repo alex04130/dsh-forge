@@ -1,3 +1,4 @@
+// description: 图片附件落盘桥：把子代理对话里的图片附件写入磁盘，供视觉子代理读取。
 // imgsub-bridge: makes subagent image prompts durable.
 //
 // The shipped client hard-rejects image content for continuable subagent

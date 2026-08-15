@@ -1,3 +1,4 @@
+// description: 运行时插件注入（dev_inject_plugin）：把本地插件包注入运行中的 profile，注册表在重启后自动恢复。
 import { mkdir, symlink, readFile, writeFile, rename, rm, lstat } from 'node:fs/promises'
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -66,6 +67,67 @@ function nodeModulesTarget(name) {
   return target
 }
 
+// ── plugin self-description discovery ──────────────────────────────────────
+// Standard (forge): packages carry their description in package.json
+// (`description`, the npm convention the dsh-plugin community follows); loose
+// .mjs plugins carry it in a machine-readable header comment on the first
+// lines: `// description: <one-line summary>`.
+
+async function descriptionOf(moduleName) {
+  const spec = String(moduleName ?? '')
+  if (spec.startsWith('./') || spec.startsWith('../')) {
+    // loose .mjs plugin relative to the profile directory
+    const file = resolve(DSH_HOME, 'profiles', 'web', spec)
+    try {
+      const text = await readFile(file, 'utf8')
+      const m = /^\/\/\s*description:\s*(.+)$/m.exec(text.slice(0, 4096))
+      return m === null ? undefined : m[1].trim()
+    } catch (error) {
+      return undefined
+    }
+  }
+  if (spec.startsWith('@deepseek-ai/') || spec.startsWith('@local/') || NAME_RE.test(spec)) {
+    try {
+      const pkg = JSON.parse(await readFile(join(NODE_MODULES, ...spec.split('/'), 'package.json'), 'utf8'))
+      return typeof pkg.description === 'string' && pkg.description.trim() !== '' ? pkg.description.trim() : undefined
+    } catch (error) {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+function registerDescriptionsRoute(webServer) {
+  if (webServer === undefined || typeof webServer.register !== 'function') return
+  const dispose = webServer.register({
+    kind: 'exact',
+    path: '/dsh-forge/plugin-descriptions',
+    handler: async (req, res) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405)
+        res.end()
+        return
+      }
+      try {
+        const entries = []
+        for (const entry of loader.entries()) {
+          const moduleName = typeof entry.options?.name === 'string' ? entry.options.name : ''
+          if (moduleName === '') continue
+          const description = await descriptionOf(moduleName)
+          entries.push({ entryId: entry.id, moduleName, ...(description !== undefined ? { description } : {}) })
+        }
+        const body = JSON.stringify({ ok: true, entries })
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+        res.end(body)
+      } catch (error) {
+        res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify({ ok: false, error: errText(error) }))
+      }
+    },
+  })
+  return () => { try { dispose() } catch (error) { /* best-effort */ } }
+}
+
 // Remove only the injector's own symlink; never `rm -rf` a real dependency.
 async function removeLinkOnly(target) {
   try {
@@ -82,6 +144,10 @@ export default {
   inject: ['tools', 'loader'],
   apply(ctx) {
     const loader = ctx.loader
+
+    // Self-description lookup for the plugin-manager panel (plugmgr fetches
+    // /dsh-forge/plugin-descriptions and renders each plugin's own summary).
+    ctx.effect(() => registerDescriptionsRoute(ctx.get('webServer')) ?? (() => {}))
 
     let registry = { version: 1, plugins: [] }
     const registryReady = (async () => {
@@ -196,7 +262,7 @@ export default {
     }
 
     registerTool('dev_inject_plugin',
-      'Runtime-inject a local plugin package into the running web profile (no restart, no patch/bundles change). dir must contain a package.json with a `name` and a `dsh`/bundle declaration. Host tools + client UI both take effect.',
+      'Runtime-inject a local plugin package into the running web profile (no restart, no patch/bundles change). `dir` must contain a package.json with a `name` and a `dsh`/bundle declaration; Host tools and client UI both take effect.',
       { dir: { type: 'string', required: true, description: 'Absolute path to the plugin package directory.' } },
       async (args) => {
         const dir = String(args.dir ?? '').trim()
@@ -205,7 +271,7 @@ export default {
       })
 
     registerTool('dev_uninject_plugin',
-      'Uninject a runtime-injected plugin package (fiber disposed, symlink removed, registry entry dropped). No restart needed.',
+      'Uninject a runtime-injected plugin package: fiber disposed, symlink removed, registry entry dropped. No restart needed.',
       { name: { type: 'string', required: true, description: 'Plugin package name (or a substring of it).' } },
       async (args) => {
         const name = String(args.name ?? '').trim()

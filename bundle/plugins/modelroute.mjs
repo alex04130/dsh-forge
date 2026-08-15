@@ -1,3 +1,4 @@
+// description: 子代理模型路由策略：子代理默认继承父的 live 路由（绝不静默升级），显式指定才用别的；plan 计费重写。
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 // dsh-modelroute: subagent model-inheritance policy + model-series taxonomy +
@@ -123,7 +124,16 @@ export default {
         }
       }
 
-      return { ...resolved, provider, model }
+      // Implicit effort inheritance: a subagent child without an explicitly
+      // injected effort (see modsub's spawn_model_subagent) inherits the
+      // parent's CURRENT reasoning effort instead of the provider default.
+      let result = { ...resolved, provider, model }
+      if (!defined(result.reasoningEffort)) {
+        const parentHeader = parent.session?.requestHeader?.()
+        const parentEffort = parentHeader?.config?.reasoningEffort
+        if (defined(parentEffort)) result = { ...result, reasoningEffort: parentEffort }
+      }
+      return result
     }
 
     function applyPlanRoute(resolved) {

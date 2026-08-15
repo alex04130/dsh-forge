@@ -37,6 +37,7 @@ window.__ModuleLoader__.load({
       '.plugmgr-chip-off:hover{background:transparent;border-color:rgba(128,128,128,.25)}',
       '.plugmgr-copy{padding:0 9px;height:24px;border-radius:7px;font-size:11px}',
       '.plugmgr-sub{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#9ca3af);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.plugmgr-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,inherit)}',
       '.plugmgr-card{border:1px solid rgba(128,128,128,.16);border-radius:14px;padding:12px 14px;margin-bottom:10px;display:flex;flex-direction:column;gap:8px;background:var(--dsw-alias-bg-layer-1,transparent);transition:border-color .12s ease,box-shadow .12s ease}',
       '.plugmgr-card:hover{border-color:rgba(128,128,128,.34);box-shadow:0 3px 12px rgba(0,0,0,.06)}',
       '.plugmgr-card-head{display:flex;align-items:center;gap:8px}',
@@ -150,6 +151,23 @@ window.__ModuleLoader__.load({
       const [query, setQuery] = React.useState('')
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState(null)
+      const [descriptions, setDescriptions] = React.useState(null)
+
+      const refreshDescriptions = () => {
+        if (typeof window.fetch !== 'function') return
+        window.fetch('/dsh-forge/plugin-descriptions').then((resp) => {
+          if (resp === null || typeof resp.json !== 'function') return null
+          return resp.json()
+        }).then((data) => {
+          if (data !== null && typeof data === 'object' && data.ok === true && Array.isArray(data.entries)) {
+            const map = {}
+            for (const e of data.entries) {
+              if (e !== null && typeof e === 'object' && typeof e.moduleName === 'string' && typeof e.description === 'string') map[e.moduleName] = e.description
+            }
+            setDescriptions(map)
+          }
+        }).catch(() => { /* self-description route unavailable */ })
+      }
 
       const refresh = () => {
         setError(null)
@@ -164,6 +182,7 @@ window.__ModuleLoader__.load({
             if (answered !== null && typeof answered === 'object' && answered.ok === true && answered.value !== null && typeof answered.value === 'object' && Array.isArray(answered.value.entries)) setHostEntries(answered.value.entries)
           }).catch(() => { /* loader inventory unavailable */ })
         }
+        refreshDescriptions()
       }
 
       React.useEffect(() => {
@@ -245,7 +264,8 @@ window.__ModuleLoader__.load({
                 } catch (error) { window.prompt('复制以下配置行（写入 cordis.patch.yml）：', yaml) }
               },
             }, '复制配置')),
-          React.createElement('div', { className: 'plugmgr-sub', title: entry.entryId + ' — ' + entry.moduleName }, entry.entryId + '  ·  ' + entry.moduleName))
+          React.createElement('div', { className: 'plugmgr-sub', title: entry.entryId + ' — ' + entry.moduleName }, entry.entryId + '  ·  ' + entry.moduleName),
+          descriptions !== null && typeof descriptions[entry.moduleName] === 'string' && descriptions[entry.moduleName].length > 0 ? React.createElement('div', { className: 'plugmgr-desc' }, descriptions[entry.moduleName]) : null)
       }
 
       const hostLocalCards = localFiltered.map(hostCard)

@@ -5,8 +5,12 @@
   "type": "module",
   "main": "lib/index.js",
   "exports": {
-    ".": { "default": "./lib/index.js" },
-    "./client": { "default": "./lib/client.js" },
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -17,5 +21,6 @@
         "@deepseek-ai/dsh-cordis-client-runner"
       ]
     }
-  }
+  },
+  "description": "动态插件客户端恢复：页面刷新或连接重置后自动重挂动态插件的客户端半部。"
 }

@@ -1,3 +1,4 @@
+// description: 代理团队（team_*）：队长 + 角色成员 + 依赖任务板，成员间可直接互发消息。
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 let idCounter = 0
@@ -104,7 +105,7 @@ export default {
     }
 
     registerTool('team_create',
-      'Create an agent team with YOU (the calling session) as the captain (lead). One captain leads one team at a time. After creating, use team_add_member to pull role-based members, team_create_task to split work with dependencies, and team_send_message to talk to members. Load the agent-teamwork skill before orchestrating a team: it describes how to design an appropriate team and subagent workflow and when to communicate.',
+      'Create an agent team with YOU (the calling session) as captain (lead); one captain leads one team at a time. Then use `team_add_member` to add members, `team_create_task` to split work with dependencies, and `team_send_message` to talk to members. Load the agent-teamwork skill before orchestrating a team: it covers team design, workflow, and when to communicate.',
       {
         name: { type: 'string', required: true, description: 'Short team name, e.g. "migration-squad".' },
         goal: { type: 'string', description: 'One-line team goal, delivered to members.' },
@@ -135,7 +136,7 @@ export default {
       })
 
     registerTool('team_add_member',
-      'Add a team member: spawns a durable, continuable subagent session with the given role and mission prompt (the member inherits this session composition, including the team tools). The member id you choose becomes its address for team_send_message. Load the agent-teamwork skill for the full team workflow.',
+      'Add a team member: spawns a durable, continuable subagent session with the given role and mission prompt (the member inherits this session\'s composition, including the team tools). The member id you choose becomes its address for `team_send_message`. Load the agent-teamwork skill for the full workflow.',
       {
         memberId: { type: 'string', required: true, description: 'Short member id/name, e.g. "researcher" or "alice".' },
         role: { type: 'string', required: true, description: 'Role description, e.g. "frontend reviewer".' },
@@ -172,7 +173,7 @@ export default {
       })
 
     registerTool('team_create_task',
-      'Split team work into a task. Optionally declare dependencies (task ids that must be completed before this one) and an assignee (member id; unassigned tasks wait in the claimable pool). Load the agent-teamwork skill for the workflow.',
+      'Split team work into a task; optionally declare dependencies (task ids that must be completed first) and an assignee (member id; unassigned tasks wait in the claimable pool). Load the agent-teamwork skill for the full workflow.',
       {
         title: { type: 'string', required: true, description: 'Short task title.' },
         description: { type: 'string', description: 'What the task requires and its acceptance criteria.' },
@@ -213,7 +214,7 @@ export default {
       })
 
     registerTool('team_claim_task',
-      'Claim a pending task for a member (or unassign it back to pending). All dependencies must be completed first. The captain may claim for anyone; a member may claim only for itself or an unassigned task. Load the agent-teamwork skill for the workflow.',
+      'Claim a pending task for a member (or unassign it back to pending). All dependencies must be completed first. The captain may claim for anyone; a member may claim only for itself or an unassigned task. Load the agent-teamwork skill for the full workflow.',
       {
         taskId: { type: 'string', required: true, description: 'Task id, e.g. "t1".' },
         memberId: { type: 'string', description: 'Member claiming the task; omitted means the caller (captain or member).' },
@@ -258,7 +259,7 @@ export default {
       })
 
     registerTool('team_update_task',
-      'Advance a task status (claimed -> in_progress -> completed | failed | cancelled) and optionally record its output. Members update their own tasks; the captain may update any task. Load the agent-teamwork skill for the workflow.',
+      'Advance a task status (claimed -> in_progress -> completed | failed | cancelled) and optionally record its output. Members update their own tasks; the captain may update any. Load the agent-teamwork skill for the full workflow.',
       {
         taskId: { type: 'string', required: true, description: 'Task id, e.g. "t1".' },
         status: { type: 'string', required: true, description: 'New status: claimed | in_progress | completed | failed | cancelled.' },
@@ -298,7 +299,7 @@ export default {
       })
 
     registerTool('team_send_message',
-      'Send a message to the captain or another member. If the recipient is live the message lands in its inbox immediately and wakes it; otherwise it is queued durably and delivered at its next session start. The sender is always the calling session (no spoofing). Check the agent-teamwork skill for when to communicate.',
+      'Send a message to the captain or another member. A live recipient receives it in its inbox immediately and wakes; otherwise it is queued durably and delivered at its next session start. The sender is always the calling session (no spoofing). Check the agent-teamwork skill for when to communicate.',
       {
         to: { type: 'string', required: true, description: 'Recipient: a member id or "captain".' },
         text: { type: 'string', required: true, description: 'Message body.' },
@@ -368,7 +369,7 @@ export default {
       })
 
     registerTool('team_status',
-      'Full team picture: members with live status, the task board with dependencies and outputs, and messages queued in YOUR inbox. Poll this to collect member output and decide the next step. Load the agent-teamwork skill for the workflow.',
+      'Full team picture: members with live status, the task board with dependencies and outputs, and messages queued in YOUR inbox. Poll it to collect member output and decide the next step. Load the agent-teamwork skill for the full workflow.',
       {},
       async (args, exec) => {
         const me = callerId(exec, agents)
@@ -414,7 +415,7 @@ export default {
       })
 
     registerTool('team_delete',
-      'End the team: best-effort interrupt live members, then archive the team record (tasks, dependency graph, and member list are kept for review). Load the agent-teamwork skill for the workflow.',
+      'End the team: best-effort interrupt live members, then archive the team record (tasks, dependency graph, and member list stay available for review). Load the agent-teamwork skill for the full workflow.',
       {},
       async (args, exec) => {
         const captain = callerId(exec, agents)

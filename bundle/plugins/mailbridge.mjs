@@ -1,3 +1,4 @@
+// description: 跨会话消息桥：session_send / session_read / mailbox_check，让同一进程内的会话互相收发消息（带 begin/end 标记）。
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -133,7 +134,7 @@ export default {
     }
 
     registerTool('session_list',
-      'List sessions in this DSH process (live and persisted): their ids, titles, and live status. Use this before session_send when you do not know the target session id, or to see which sessions exist for cross-session coordination.',
+      'List sessions in this DSH process (live and persisted) with their ids, titles, and live status. Use it to find a target session id before `session_send`, or to see which sessions exist for cross-session coordination.',
       { limit: { type: 'number', description: 'Maximum sessions to return (default 50, cap 200).' } },
       async (args, exec) => {
         const cap = typeof args.limit === 'number' && args.limit > 0 ? Math.min(Math.floor(args.limit), 200) : 50
@@ -152,7 +153,7 @@ export default {
       })
 
     registerTool('session_read',
-      'Read the recent message log of another session (exact reads only). Returns user, assistant, and tool messages with their text, oldest first. Use it to understand what another session is doing before messaging it, or to collect its results.',
+      'Read the recent message log of another session (exact reads only): user, assistant, and tool messages with their text, oldest first. Use it to understand what another session is doing before messaging it, or to collect its results.',
       {
         sessionId: { type: 'string', required: true, description: 'Target session id from session_list.' },
         maxEvents: { type: 'number', description: 'Maximum events returned (default 20, cap 500).' },
@@ -189,7 +190,7 @@ export default {
       })
 
     registerTool('session_send',
-      'Send a message to another session in this DSH process. If the target session is live, the message is delivered straight into its inbox and wakes it; otherwise it is queued durably and delivered automatically the next time that session starts. The recipient sees the text prefixed with "[cross-session message from <session name> (<sessionId>)]".',
+      'Send a message to another session in this DSH process. A live target receives it in its inbox immediately and wakes; otherwise the message is queued durably and delivered the next time that session starts. The recipient sees the text prefixed with `[cross-session message from <session name> (<sessionId>)]`.',
       {
         targetSessionId: { type: 'string', required: true, description: 'Target session id from session_list.' },
         text: { type: 'string', required: true, description: 'Message body for the target session.' },
@@ -240,7 +241,7 @@ export default {
       })
 
     registerTool('mailbox_check',
-      'Check and consume cross-session messages queued for THIS session (messages sent while this session was not live). Returns the messages and removes them from the durable queue. Call it when the user asks whether other sessions sent anything.',
+      'Check and consume cross-session messages queued for THIS session (messages sent while it was not live). Returns the messages and removes them from the durable queue; call it when the user asks whether other sessions sent anything.',
       {},
       async (args, exec) => {
         const me = callerId(exec, agents)

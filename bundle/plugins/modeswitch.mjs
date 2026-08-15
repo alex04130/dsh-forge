@@ -1,3 +1,4 @@
+// description: 会话中途切换模式（switch_mode）；目标模式新增能力时先弹审批，同级或降级直接切。
 import yaml from 'js-yaml'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -42,7 +43,7 @@ export default {
 
     const tool = defineTool({
       name: 'switch_mode',
-      description: 'Switch THIS session to another agent preset ("mode") mid-session. The switch applies from the next step: the new preset supplies the tool catalog and prompt, the old one is re-linked away. When the target preset grants capabilities the current preset lacks (a permission increase), the switch asks the user for confirmation and cancels unless the user allows it; switching to a preset with equal or fewer capabilities proceeds without asking. The target preset must exist and mount cleanly, otherwise the call fails and nothing changes. Caveats: prior logged tool calls stay readable only if the new preset defines the same tools; plan-mode state belongs to the old preset and does not carry over. This switch_mode tool is mounted in the host composition and stays available after the switch.',
+      description: 'Switch THIS session to another agent preset (mode) mid-session; the switch applies from the next step, when the new preset supplies the tool catalog and prompt. Switching to a preset that grants capabilities the current one lacks (a permission increase) asks the user for confirmation and cancels unless allowed; equal-or-fewer capabilities proceed without asking. The target preset must exist and mount cleanly, otherwise the call fails and nothing changes. Caveats: prior logged tool calls stay readable only if the new preset defines the same tools; plan-mode state does not carry over. This tool is mounted in the host composition and stays available after the switch.',
       parameters: {
         presetId: { type: 'string', required: true, description: 'Preset id to switch to, e.g. "cordis", "code", "standard", or a user-authored preset id.' },
       },

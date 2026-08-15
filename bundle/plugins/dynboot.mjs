@@ -1,3 +1,4 @@
+// description: 动态插件启动器：启动时把 auto-plugins.json 的条目 define 成动态插件（重启自动恢复）。
 import { readFile } from 'node:fs/promises'
 
 const DSH_HOME = process.env.DSH_HOME || '/home/alex/.dsh'

@@ -1,3 +1,4 @@
+// description: 模型委派：model_list / model_call，把文本任务交给任意已配置的 provider/model 并取回完整结果。
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 let idCounter = 0
@@ -43,7 +44,7 @@ export default {
     }
 
     registerTool('model_list',
-      'List every LLM provider route registered in this DSH process and the models each route advertises. Use it before model_call to pick a provider/model pair, or to check whether a vendor is configured. Providers are activated through the llm-pi-ai settings section (baseURL/api/apiKeyEnv/models); API keys resolve from the credential store per request.',
+      'List every LLM provider route registered in this DSH process and the models each route advertises, plus a reverse index (byModel: which providers serve each model id). Use it to pick a `provider`/`model` pair for `model_call` or `spawn_model_subagent`, or to check whether a vendor or model is configured. Providers are configured via the llm-pi-ai settings section (baseURL/api/apiKeyEnv/models); API keys resolve from the credential store per request.',
       {},
       async () => {
         const providers = llm.listProviders().map((p) => ({ id: p.id, name: p.name }))
@@ -56,11 +57,20 @@ export default {
             models[provider.id] = { error: errText(error) }
           }
         }
-        return jsonText({ ok: true, providers, models })
+        const byModel = {}
+        for (const [providerId, list] of Object.entries(models)) {
+          if (!Array.isArray(list)) continue
+          for (const m of list) {
+            if (m === null || typeof m !== 'object' || typeof m.id !== 'string') continue
+            if (byModel[m.id] === undefined) byModel[m.id] = []
+            byModel[m.id].push(providerId)
+          }
+        }
+        return jsonText({ ok: true, providers, models, byModel })
       })
 
     registerTool('model_call',
-      'Call a model from another provider (or the same one) as a text-only one-shot and return its complete reply. The main model stays in control: this is delegation, not replacement. Use model_list first to pick provider/model. Nested tool calling is not supported: give the delegate model everything it needs inside the prompt and system text.',
+      'Call a model from another provider (or the same one) as a one-shot, text-only completion and return its complete reply as this tool call\'s result. This is NOT task delegation and NOT a subagent: the delegate model gets one turn, cannot call tools, and only returns text; the main model stays in control and digests the reply. Use it for a bounded text task (translate, summarize, classify, second opinion). Pick `provider`/`model` via `model_list`. Nested tool calling is unsupported: give the delegate everything it needs in the prompt and system text.',
       {
         provider: { type: 'string', required: true, description: 'Provider route id, e.g. "deepseek-official" or "kimi-coding" (see model_list).' },
         model: { type: 'string', required: true, description: 'Model id on that provider, e.g. "k3".' },
