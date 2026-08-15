@@ -207,7 +207,14 @@ export default {
         // Strip any legacy end marker the sender may have copied into the body,
         // so the wrap never doubles up.
         const cleanBody = body.replace(/(\n*\s*(?:\[\/cross-session message\]|\[cross-session message end\])\s*)+$/, '')
-        const wrapped = prefix + '\n\n' + cleanBody + '\n\n[cross-session message end]'
+        // Reply guidance rides every wrapped message so the receiving model
+        // knows it must answer the SENDER SESSION (not just the local user)
+        // when the body asks for a reply — cross-session requests are easy to
+        // misread as local user input otherwise.
+        const replyHint = from === undefined
+          ? ''
+          : '\n\n（这是一条跨会话协作消息。若它要求回复，处理后请用 session_send 把结论发回给发送方会话 ' + from + '，而不是只写在本地对话里。）'
+        const wrapped = prefix + '\n\n' + cleanBody + replyHint + '\n\n[cross-session message end]'
         const message = {
           id: makeId('m'),
           role: 'user',
