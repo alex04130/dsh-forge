@@ -97,8 +97,8 @@ async function descriptionOf(moduleName) {
   return undefined
 }
 
-function registerDescriptionsRoute(webServer) {
-  if (webServer === undefined || typeof webServer.register !== 'function') return
+function registerDescriptionsRoute(webServer, loader) {
+  if (webServer === undefined || typeof webServer.register !== 'function' || loader === undefined) return
   const dispose = webServer.register({
     kind: 'exact',
     path: '/dsh-forge/plugin-descriptions',
@@ -141,13 +141,13 @@ async function removeLinkOnly(target) {
 }
 
 export default {
-  inject: ['tools', 'loader'],
+  inject: ['tools', 'loader', 'webServer'],
   apply(ctx) {
     const loader = ctx.loader
 
     // Self-description lookup for the plugin-manager panel (plugmgr fetches
     // /dsh-forge/plugin-descriptions and renders each plugin's own summary).
-    ctx.effect(() => registerDescriptionsRoute(ctx.get('webServer')) ?? (() => {}))
+    ctx.effect(() => registerDescriptionsRoute(ctx.webServer, loader) ?? (() => {}))
 
     let registry = { version: 1, plugins: [] }
     const registryReady = (async () => {
