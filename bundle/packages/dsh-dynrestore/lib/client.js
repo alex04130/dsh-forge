@@ -6,6 +6,7 @@ window.__ModuleLoader__.load({
       inject: ['remote', 'remote.dynamicCordisRunner', 'dynamicCordisRunner'],
       apply: function (ctx) {
         var gate = Promise.resolve()
+        var restoredKeys = {} // pluginId:packageId -> true; suppress repeated startUserRun noise
         function restore() {
           gate = gate.then(async function () {
             try {
@@ -24,6 +25,8 @@ window.__ModuleLoader__.load({
                   if (packages[j] !== null && typeof packages[j] === 'object' && packages[j].packageId === active.packageId) { pkg = packages[j]; break }
                 }
                 if (pkg === undefined || pkg.hasClientHalf !== true) continue
+                var key = row.pluginId + ':' + active.packageId
+                if (restoredKeys[key] === true) continue // already re-mounted in this page session
                 try {
                   await ctx.dynamicCordisRunner.startUserRun({
                     agentId: row.agentId,
@@ -32,6 +35,7 @@ window.__ModuleLoader__.load({
                     mode: 'run',
                     hasClientHalf: true
                   })
+                  restoredKeys[key] = true
                 } catch (error) {
                   /* a single failing package must not block the rest */
                 }
