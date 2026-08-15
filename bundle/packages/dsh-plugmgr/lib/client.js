@@ -8,7 +8,8 @@ window.__ModuleLoader__.load({
     const React = require('react')
 
     const css = [
-      '[class$="_footerActions"] { flex-direction: column; align-items: stretch; gap: 2px; }',
+      '[class$="_footerActions"] { flex-direction: column; align-items: stretch; gap: 4px; }',
+      '[class$="_footerActions"] > [class$="_layer"] { margin: 0; min-height: 49px; }',
       '[class*="collapsed"] [class$="_footerActions"] { align-items: center; }',
       '.plugmgr-root{display:flex;align-items:center;flex:0 1 auto;min-width:0;position:relative;order:-1}',
       '.plugmgr-badge{box-sizing:border-box;width:100%;height:49px;display:flex;align-items:center;gap:8px;padding:0 8px 0 6px;border:none;border-radius:12px;cursor:pointer;font-size:14px;font-family:inherit;color:var(--dsw-alias-label-primary,inherit);background:transparent}',
