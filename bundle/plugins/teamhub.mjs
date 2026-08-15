@@ -339,7 +339,8 @@ export default {
             }
           }
           if (targetSession === undefined) return jsonText({ ok: false, error: 'recipient "' + to + '" is not part of your team' })
-          const wrapped = '<team-message from="' + me + '" to="' + to + '">\n' + text + '\n</team-message>'
+          const prefix = '[team message from ' + me + ']'
+          const wrapped = prefix + '\n\n' + text + '\n\n[/team message]'
           const message = {
             id: makeId('m'),
             role: 'user',

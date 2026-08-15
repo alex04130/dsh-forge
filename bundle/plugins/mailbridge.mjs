@@ -201,8 +201,8 @@ export default {
         const from = callerId(exec, agents)
         const fromName = await callerName(from)
         const senderLabel = fromName !== null ? fromName + ' (' + from + ')' : (from ?? 'unknown')
-        const openTag = '<cross-session-message from="' + senderLabel + '" id="' + makeId('m') + '">'
-        const wrapped = openTag + '\n' + body + '\n</cross-session-message>'
+        const prefix = '[cross-session message from ' + senderLabel + ']'
+        const wrapped = prefix + '\n\n' + body + '\n\n[/cross-session message]'
         const message = {
           id: makeId('m'),
           role: 'user',
