@@ -97,6 +97,10 @@ docs/       架构文档（注入方式对比、分层规则、锚定规则、ca
 
 `docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。
 
+## 友情链接
+
+- [Deepseek-Harness-EAC](https://github.com/zouyuxuan122/Deepseek-Harness-EAC) — DeepSeek Harness 的 Windows 桌面客户端：内置 Node.js + dsh CLI、一键启动、10 套内置皮肤（EAC：Embracing All Creation 揽尽万象）。
+
 ## 许可与归因
 
 MIT。改编自 [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)、[dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)、[dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite)（均 MIT），详见 NOTICE。
