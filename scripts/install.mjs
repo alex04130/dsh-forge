@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// dsh-suite installer: copy the suite into $DSH_HOME (default ~/.dsh) with
+// dsh-forge installer: copy the suite into $DSH_HOME (default ~/.dsh) with
 // backups and idempotent merges. Run: node scripts/install.mjs
 import { mkdir, copyFile, readFile, writeFile, rename, symlink, rm, access } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -9,11 +9,14 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DSH_HOME = process.env.DSH_HOME || join(process.env.HOME || '', '.dsh')
 const PROFILE = 'web'
+// Marker values keep the old "dsh-suite" spelling on purpose: profiles
+// installed before the rename already contain blocks wrapped by these
+// markers; changing them would break the idempotent merge.
 const MARK_START = '# dsh-suite:start'
 const MARK_END = '# dsh-suite:end'
 
 const log = (m) => console.log('  ' + m)
-const step = (m) => console.log('[dsh-suite] ' + m)
+const step = (m) => console.log('[dsh-forge] ' + m)
 
 async function backup(file) {
   try {
@@ -149,6 +152,6 @@ try {
   await installPreset()
   step('完成。重启 DSH（dsh web）后生效；preset 需在会话里选择 router-standard。')
 } catch (e) {
-  console.error('[dsh-suite] 安装失败:', e && e.message ? e.message : e)
+  console.error('[dsh-forge] 安装失败:', e && e.message ? e.message : e)
   process.exit(1)
 }

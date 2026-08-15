@@ -1,5 +1,5 @@
 {
-  "name": "dsh-suite",
+  "name": "dsh-forge",
   "version": "0.1.0",
   "private": true,
   "description": "DSH extension suite: runtime injector, task-aware reasoning-mode routing preset, cross-session mailbox, agent teams, model delegation, skill manager, and plugin-manager UI.",

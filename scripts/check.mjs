@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// dsh-suite checker: syntax-check every host/client artifact in the repo.
+// dsh-forge checker: syntax-check every host/client artifact in the repo.
 // Run: node scripts/check.mjs
 import { readFile, readdir } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
