@@ -34,6 +34,11 @@ console.log('[check] host 插件 (bundle/plugins)')
 for (const name of await readdir(join(ROOT, 'bundle/plugins'))) {
   if (name.endsWith('.mjs')) checkFile(join(ROOT, 'bundle/plugins', name))
 }
+try {
+  for (const name of await readdir(join(ROOT, 'bundle/plugins/lib'))) {
+    if (name.endsWith('.mjs')) checkFile(join(ROOT, 'bundle/plugins/lib', name))
+  }
+} catch { /* no lib dir */ }
 
 console.log('[check] preset (presets/router-standard)')
 for (const name of await readdir(join(ROOT, 'presets/router-standard'))) {

@@ -1,5 +1,6 @@
 // description: 代理团队（team_*）：队长 + 角色成员 + 依赖任务板，成员间可直接互发消息。
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { collectModelEscalations, collectPresetEscalations, installChildPolicy } from './lib/subagent-policy.mjs'
 
 let idCounter = 0
 function makeId(prefix) {
@@ -36,6 +37,13 @@ export default {
     const storage = ctx.storage
     const subagents = ctx.subagents
     const skills = ctx.get('skills')
+    const presets = ctx.get('agentPresets')
+    const approval = ctx.get('approval')
+
+    // Same delegation policy as spawn_model_subagent: team members get the
+    // explicit mode / effort applied before their first prompt assembly, and
+    // any escalation (model tier/series, preset capability face) asks the user.
+    const policy = installChildPolicy(ctx, presets)
 
     let teamsUnit = undefined
     let openError = undefined
@@ -136,11 +144,15 @@ export default {
       })
 
     registerTool('team_add_member',
-      'Add a team member: spawns a durable, continuable subagent session with the given role and mission prompt (the member inherits this session\'s composition, including the team tools). The member id you choose becomes its address for `team_send_message`. Load the agent-teamwork skill for the full workflow.',
+      'Add a team member: spawns a durable, continuable subagent session with the given role and mission prompt (the member inherits this session\'s composition, including the team tools). The member id you choose becomes its address for `team_send_message`. Like `spawn_model_subagent`, optional `provider`/`model`/`reasoningEffort`/`mode` overrides inherit from the captain by default, and any escalation (higher model tier, cross-series model, or a preset whose plugin-row capability face is not a subset of the captain\'s) asks the user for approval. Load the agent-teamwork skill for the full workflow.',
       {
         memberId: { type: 'string', required: true, description: 'Short member id/name, e.g. "researcher" or "alice".' },
         role: { type: 'string', required: true, description: 'Role description, e.g. "frontend reviewer".' },
         prompt: { type: 'string', required: true, description: 'Initial mission for the member (delivered as its first message).' },
+        provider: { type: 'string', description: 'Optional explicit provider route for the member; omit to inherit the captain\'s provider.' },
+        model: { type: 'string', description: 'Optional explicit model id for the member; omit to inherit the captain\'s current model.' },
+        reasoningEffort: { type: 'string', description: 'Optional explicit reasoning effort for the member; omit to inherit the captain\'s current effort.' },
+        mode: { type: 'string', description: 'Optional agent preset id for the member (e.g. "router-standard", "cordis"); omit to inherit the captain\'s composition.' },
       },
       async (args, exec) => {
         const captain = callerId(exec, agents)
@@ -156,19 +168,59 @@ export default {
           if (team === undefined) return jsonText({ ok: false, error: 'no team found; call team_create first' })
           if (memberOf(team, memberId)) return jsonText({ ok: false, error: 'member "' + memberId + '" already exists' })
           if (team.members.length >= 8) return jsonText({ ok: false, error: 'team member limit (8) reached' })
+
+          const explicitProvider = typeof args.provider === 'string' && args.provider.trim() !== '' ? args.provider.trim() : undefined
+          const explicitModel = typeof args.model === 'string' && args.model.trim() !== '' ? args.model.trim() : undefined
+          const explicitEffort = typeof args.reasoningEffort === 'string' && args.reasoningEffort.trim() !== '' ? args.reasoningEffort.trim() : undefined
+          const modeId = typeof args.mode === 'string' && args.mode.trim() !== '' ? args.mode.trim() : undefined
+
+          const route = policy.liveRoute(agent)
+          const parentHeader = agent.session?.requestHeader?.()
+          const parentPreset = presets !== undefined ? presets.composedPreset(agent.ctx) : undefined
+          const parentModel = route.model ?? parentHeader?.config?.model
+          const childModel = explicitModel ?? parentModel
+          const effort = explicitEffort ?? parentHeader?.config?.reasoningEffort
+
+          const escalations = [
+            ...collectModelEscalations(parentModel, childModel),
+            ...(await collectPresetEscalations({ parentPreset, targetPreset: modeId, presets })),
+          ]
+          if (escalations.length > 0) {
+            if (approval === undefined) {
+              return jsonText({ ok: false, error: 'adding this member escalates (' + escalations.join('; ') + ') but no approval service is mounted to confirm it' })
+            }
+            const outcome = await approval.request({
+              agent,
+              toolName: 'team_add_member',
+              reason: 'team member escalation: ' + escalations.join('; '),
+              signal: exec !== undefined ? exec.signal : undefined,
+            })
+            if (outcome !== 'allowed-once') {
+              return jsonText({ ok: false, cancelled: true, reason: 'the user did not allow this member escalation (approval outcome "' + String(outcome) + '"); no member was added', escalations })
+            }
+          }
+
           const persona = 'You are member "' + memberId + '" (' + role + ') of agent team "' + team.name + '" led by captain session ' + captain + '. Team goal: ' + String(team.goal ?? '(none)') + '.\n\nWork protocol:\n- Claim and work only on tasks assigned to you (team_claim_task / team_update_task).\n- When a task is done, call team_update_task with status "completed" and put your result in output.\n- Talk to the captain or other members with team_send_message (their ids are in team_status).\n- Check team_status for your inbox and task state before acting.\n- Load the agent-teamwork skill for the full team protocol.\n\nYour mission from the captain:\n' + String(args.prompt ?? '')
+          const agentOptions = {}
+          if (explicitProvider !== undefined) agentOptions.provider = explicitProvider
+          if (explicitModel !== undefined) agentOptions.model = explicitModel
           const started = await subagents.startContinuable({
             provider: 'spawn',
             label: memberId + ' (' + role + ')',
             request: {
               prompt: [{ type: 'text', text: persona }],
               parent: agent,
+              ...(Object.keys(agentOptions).length > 0 ? { agentOptions } : {}),
             },
             signal: exec !== undefined ? exec.signal : undefined,
           })
+          policy.register(started.childId, {
+            ...(modeId !== undefined ? { mode: modeId } : {}),
+            ...(effort !== undefined && typeof effort === 'string' ? { effort } : {}),
+          })
           team.members.push({ id: memberId, sessionId: started.childId, role, createdAt: Date.now() })
           await teamsUnit.putRecord('team', captain, team)
-          return jsonText({ ok: true, member: { id: memberId, sessionId: started.childId, role } })
+          return jsonText({ ok: true, member: { id: memberId, sessionId: started.childId, role }, ...(modeId !== undefined ? { mode: modeId } : {}), ...(escalations.length > 0 ? { approvedEscalations: escalations } : {}) })
         })
       })
 

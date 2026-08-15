@@ -1,6 +1,6 @@
 // description: 会话中途切换模式（switch_mode）；目标模式新增能力时先弹审批，同级或降级直接切。
-import yaml from 'js-yaml'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { collectPresetEscalations } from './lib/subagent-policy.mjs'
 
 function errText(error) {
   if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
@@ -8,42 +8,6 @@ function errText(error) {
 }
 function jsonText(value) {
   return JSON.stringify(value, null, 2)
-}
-
-// ── preset permission levels (keep in sync with modsub.mjs) ───────────────
-// cordis (创造) owns the plugin-authoring surface and sits on top; code is
-// the coding preset; standard and router-standard share the standard tier
-// (router-standard only adds first-turn routing); minimal is the read-only
-// floor. Unknown preset ids default to the middle level (2).
-const PRESET_LEVELS = { cordis: 4, code: 3, standard: 2, 'router-standard': 2, minimal: 1 }
-
-function presetLevel(id) {
-  if (typeof id !== 'string' || id === '') return 0
-  return PRESET_LEVELS[id] ?? 2
-}
-
-/** Collect every plugin row name from one preset composition. */
-function pluginNames(compositionText) {
-  try {
-    const doc = yaml.load(compositionText)
-    const names = []
-    const walk = (node) => {
-      if (Array.isArray(node)) { for (const item of node) walk(item); return }
-      if (node === null || typeof node !== 'object') return
-      if (typeof node.name === 'string' && node.name.length > 0) names.push(node.name)
-      for (const value of Object.values(node)) walk(value)
-    }
-    walk(doc)
-    return [...new Set(names)]
-  } catch (error) {
-    return []
-  }
-}
-
-/** Plugin rows the target preset adds over the current one. */
-function addedNames(currentNames, targetNames) {
-  const have = new Set(currentNames)
-  return targetNames.filter((name) => !have.has(name))
 }
 
 export default {
@@ -111,20 +75,7 @@ export default {
           if (current === presetId) return jsonText({ ok: true, switchedTo: presetId, unchanged: true })
           let added = []
           if (current !== undefined && current !== null) {
-            // Permission ladder first: a low -> high privilege preset switch
-            // always asks, regardless of plugin-row diffs (which can miss
-            // capability changes expressed outside insert rows).
-            const currentLevel = presetLevel(current)
-            const targetLevel = presetLevel(presetId)
-            if (targetLevel > currentLevel) {
-              added = ['permission upgrade: "' + current + '" (level ' + currentLevel + ') -> "' + presetId + '" (level ' + targetLevel + ')']
-            } else {
-              try {
-                const currentNames = pluginNames(await presets.read(current))
-                const targetNames = pluginNames(await presets.read(presetId))
-                added = addedNames(currentNames, targetNames)
-              } catch (error) { /* comparison is best-effort; recompose still validates the target */ }
-            }
+            added = await collectPresetEscalations({ parentPreset: current, targetPreset: presetId, presets })
           }
           if (added.length > 0) {
             if (approval === undefined) {

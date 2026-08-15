@@ -1,6 +1,6 @@
 // description: 子代理派发（spawn_model_subagent）：可选 provider/model/effort/模式，默认全继承父代理，提权自动问用户。
-import yaml from 'js-yaml'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { collectModelEscalations, collectPresetEscalations, installChildPolicy } from './lib/subagent-policy.mjs'
 
 function errText(error) {
   if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
@@ -10,180 +10,36 @@ function jsonText(value) {
   return JSON.stringify(value, null, 2)
 }
 
-// ── model taxonomy (kept in sync with modelroute.mjs) ────────────────────
-const DEFAULT_SERIES = {
-  deepseek: { match: /^deepseek/i, tiers: ['flash', 'lite', 'pro', 'max'] },
-  claude: { match: /^(claude|anthropic)/i, tiers: ['haiku', 'sonnet', 'opus'] },
-  chatgpt: { match: /^(gpt|chatgpt|o1|o3|openai)/i, tiers: ['mini', 'lite', 'pro', 'max'] },
-  qwen: { match: /^qwen/i, tiers: ['flash', 'lite', 'plus', 'max'] },
-}
-
-function matchSeries(spec, id) {
-  if (spec !== null && typeof spec === 'object' && spec.match instanceof RegExp) {
-    const re = new RegExp(spec.match.source, spec.match.flags.replace(/[gy]/g, ''))
-    return re.test(id)
-  }
-  return id.toLowerCase().includes(String(spec?.match ?? '').toLowerCase())
-}
-
-function seriesOf(modelId) {
-  const id = String(modelId ?? '')
-  for (const [name, spec] of Object.entries(DEFAULT_SERIES)) {
-    if (matchSeries(spec, id)) return name
-  }
-  return null
-}
-
-function tierOf(seriesName, modelId) {
-  const spec = DEFAULT_SERIES[seriesName]
-  if (spec === undefined || !Array.isArray(spec.tiers)) return -1
-  const id = String(modelId ?? '').toLowerCase()
-  for (let i = 0; i < spec.tiers.length; i += 1) {
-    if (id.includes(String(spec.tiers[i]).toLowerCase())) return i
-  }
-  return -1
-}
-
-/** Collect every plugin row name from one preset composition. */
-function pluginNames(compositionText) {
-  try {
-    const doc = yaml.load(compositionText)
-    const names = []
-    const walk = (node) => {
-      if (Array.isArray(node)) { for (const item of node) walk(item); return }
-      if (node === null || typeof node !== 'object') return
-      if (typeof node.name === 'string' && node.name.length > 0) names.push(node.name)
-      for (const value of Object.values(node)) walk(value)
-    }
-    walk(doc)
-    return [...new Set(names)]
-  } catch (error) {
-    return []
-  }
-}
-
-/** Plugin rows the target preset adds over the current one. */
-function addedNames(currentNames, targetNames) {
-  const have = new Set(currentNames)
-  return targetNames.filter((name) => !have.has(name))
-}
-
-// ── preset permission levels ──────────────────────────────────────────────
-// Escalation is judged FIRST by this permission ladder (a spawn into a
-// higher-privilege preset always asks the user), then by plugin-row diffs
-// as a fallback for presets absent from the table. cordis (创造) owns the
-// plugin-authoring surface (cordis_*/dev_* etc.) and sits on top; code is
-// the coding preset; standard and router-standard are the SAME standard
-// tier (router-standard only adds first-turn routing on top); minimal is
-// the read-only floor. Unknown preset ids default to the middle level (2).
-const PRESET_LEVELS = { cordis: 4, code: 3, standard: 2, 'router-standard': 2, minimal: 1 }
-
-function presetLevel(id) {
-  if (typeof id !== 'string' || id === '') return 0
-  return PRESET_LEVELS[id] ?? 2
-}
-
 // ── spawn_model_subagent v2 ──────────────────────────────────────────────
 // Subagent spawning with explicit mode / reasoning-effort / provider / model
 // controls. Defaults INHERIT the parent (same provider, same model, same
 // effort, same preset) so billing and capability never silently change:
 //   - provider: only an EXPLICIT provider argument may switch the provider
-//     (explicit model alone keeps the parent\'s provider — billing safety).
+//     (explicit model alone keeps the parent's provider — billing safety).
 //   - model: explicit model wins; otherwise the parent's live route model.
 //   - reasoningEffort: explicit value, else the parent's CURRENT effort
 //     (snapshot at spawn; applies to every turn of the child).
 //   - mode (agent preset): explicit preset id re-composes the child before
 //     its first prompt assembly; otherwise the child inherits the parent's
 //     composition as usual.
-// Escalation policy: any upgrade — a higher model tier in the same series, a
-// cross-series model change, or a target preset that adds capabilities —
-// asks the user through the approval service (allowed-once). Equal or lower
-// tiers / equal or fewer capabilities proceed without asking.
+// Escalation policy (shared library, also used by switch_mode and
+// team_add_member): any upgrade — a higher model tier in the same series, a
+// cross-series model change, or a target preset whose plugin-row capability
+// face is not a subset of the parent's — asks the user through the approval
+// service (allowed-once). Equal or lower tiers / equal or fewer capabilities
+// proceed without asking. No hard-coded preset ladders.
 export default {
   inject: ['tools', 'subagents'],
   apply(ctx) {
     const subagents = ctx.subagents
-    const agents = ctx.get('agents')
     const presets = ctx.get('agentPresets')
     const approval = ctx.get('approval')
 
-    const effortByChild = new Map() // childSessionId -> reasoningEffort (explicit or parent snapshot)
-    const modeByChild = new Map() // childSessionId -> presetId to re-compose
-    const disposers = new Map() // agentId -> agent/request disposer
-    const preStepDisposers = new Map() // agentId -> first pre-step recompose disposer
-
-    function liveRoute(parent) {
-      const header = parent.session?.requestHeader?.()
-      const cfg = header?.config
-      if (cfg !== undefined && cfg.provider && cfg.model) {
-        return { provider: cfg.provider, model: cfg.model, reasoningEffort: cfg.reasoningEffort }
-      }
-      return { provider: parent.options?.provider, model: parent.options?.model, reasoningEffort: undefined }
-    }
-
-    // Re-compose freshly created children to an explicit preset. The
-    // re-composition happens in the child's FIRST pre-step (prepend), i.e.
-    // before its first prompt assembly, so the very first model request
-    // already runs under the requested preset — not a later step.
-    ctx.on('agent/created', ({ agent }) => {
-      if (agent === undefined || agent.ctx === undefined) return
-      const sid = agent.session?.id
-      if (sid === undefined) return
-
-      const modeId = modeByChild.get(sid)
-      if (modeId !== undefined && presets !== undefined) {
-        modeByChild.delete(sid)
-        try {
-          const preStepOff = agent.ctx.on('agent/pre-step', async (_payload, next) => {
-            try { preStepOff() } catch (error) { /* best-effort */ }
-            try {
-              const preset = await presets.recompose(agent.ctx, modeId)
-              try { agent.session.append('agent-preset/selected', { agentPreset: preset.id }) } catch (error) { /* durable record is best-effort */ }
-            } catch (error) {
-              console.error('[modsub] child preset recompose failed for', sid, ':', errText(error))
-            }
-            return next()
-          }, { prepend: true })
-          preStepDisposers.set(agent.id, preStepOff)
-        } catch (error) {
-          console.error('[modsub] failed to install preset re-composition for', sid, ':', errText(error))
-        }
-      }
-
-      const effort = effortByChild.get(sid)
-      if (effort !== undefined) effortByChild.delete(sid)
-
-      try {
-        const off = agent.ctx.on('agent/request', async (_payload, next) => {
-          const resolved = await next()
-          if (effort === undefined || resolved.reasoningEffort === effort) return resolved
-          try {
-            return { ...resolved, reasoningEffort: effort }
-          } catch (error) {
-            return resolved
-          }
-        }, { prepend: true })
-        disposers.set(agent.id, off)
-      } catch (error) {
-        console.error('[modsub] failed to install effort injection for', sid, ':', errText(error))
-      }
-    })
-    ctx.on('agent/disposed', ({ agent }) => {
-      const off = disposers.get(agent?.id)
-      if (off !== undefined) {
-        try { off() } catch (error) { /* best-effort */ }
-        disposers.delete(agent.id)
-      }
-      const pso = preStepDisposers.get(agent?.id)
-      if (pso !== undefined) {
-        try { pso() } catch (error) { /* best-effort */ }
-        preStepDisposers.delete(agent.id)
-      }
-    })
+    const policy = installChildPolicy(ctx, presets)
 
     const tool = defineTool({
       name: 'spawn_model_subagent',
-      description: 'Spawn a durable, continuable subagent session that inherits this session\'s composition (same tools, same workspace) and, by default, the parent\'s `provider`/`model`/`reasoningEffort`/`mode` (agent preset), so billing never silently changes. Passing any of these explicitly overrides only that axis: an explicit `model` alone keeps the parent\'s provider. Escalation — a higher model tier in the same series, a cross-series model change, or a target preset that adds capabilities — asks the user for approval and cancels unless allowed; equal-or-lower tiers and equal-or-fewer capabilities proceed without asking. See `model_list` for available provider/model pairs. The returned childId is the child session id: the user can open it in the GUI and send screenshots/text to it, and the child reports its final answer back to this session.',
+      description: 'Spawn a durable, continuable subagent session that inherits this session\'s composition (same tools, same workspace) and, by default, the parent\'s `provider`/`model`/`reasoningEffort`/`mode` (agent preset), so billing never silently changes. Passing any of these explicitly overrides only that axis: an explicit `model` alone keeps the parent\'s provider. Escalation — a higher model tier in the same series, a cross-series model change, or a target preset whose plugin-row capability face is not a subset of the parent\'s — asks the user for approval and cancels unless allowed; equal-or-lower tiers and equal-or-fewer capabilities proceed without asking. See `model_list` for available provider/model pairs. The returned childId is the child session id: the user can open it in the GUI and send screenshots/text to it, and the child reports its final answer back to this session.',
       parameters: {
         prompt: { type: 'string', required: true, description: 'The complete mission for the child agent (it sees nothing from this conversation).' },
         label: { type: 'string', description: 'Short display label for the child session.' },
@@ -208,7 +64,7 @@ export default {
           const explicitEffort = typeof args.reasoningEffort === 'string' && args.reasoningEffort.trim() !== '' ? args.reasoningEffort.trim() : undefined
           const modeId = typeof args.mode === 'string' && args.mode.trim() !== '' ? args.mode.trim() : undefined
 
-          const route = liveRoute(agent)
+          const route = policy.liveRoute(agent)
           const parentHeader = agent.session?.requestHeader?.()
           const parentPreset = presets !== undefined ? presets.composedPreset(agent.ctx) : undefined
           const parentModel = route.model ?? parentHeader?.config?.model
@@ -216,40 +72,10 @@ export default {
           const childProvider = explicitProvider ?? route.provider
           const effort = explicitEffort ?? parentHeader?.config?.reasoningEffort
 
-          // ── escalation detection ─────────────────────────────────────────
-          const escalations = []
-
-          // model tier / series
-          if (explicitModel !== undefined && parentModel !== undefined && childModel !== parentModel) {
-            const ps = seriesOf(parentModel)
-            const cs = seriesOf(childModel)
-            if (ps !== null && cs !== null && ps === cs) {
-              const pt = tierOf(ps, parentModel)
-              const ct = tierOf(cs, childModel)
-              if (ct > pt) escalations.push('model tier upgrade: ' + parentModel + ' (tier ' + pt + ') -> ' + childModel + ' (tier ' + ct + ')')
-            } else if (ps !== cs) {
-              escalations.push('model series change: ' + parentModel + ' -> ' + childModel + ' (different vendor family; billing semantics unknown)')
-            }
-          }
-
-          // preset permission increase: judged FIRST on the preset permission
-          // ladder (low -> high privilege always asks), then on plugin-row
-          // diffs as a fallback for presets outside the ladder.
-          let added = []
-          if (modeId !== undefined && parentPreset !== undefined && modeId !== parentPreset && presets !== undefined) {
-            const parentLevel = presetLevel(parentPreset)
-            const targetLevel = presetLevel(modeId)
-            if (targetLevel > parentLevel) {
-              escalations.push('preset permission upgrade: "' + parentPreset + '" (level ' + parentLevel + ') -> "' + modeId + '" (level ' + targetLevel + ')')
-            } else {
-              try {
-                const currentNames = pluginNames(await presets.read(parentPreset))
-                const targetNames = pluginNames(await presets.read(modeId))
-                added = addedNames(currentNames, targetNames)
-                if (added.length > 0) escalations.push('preset upgrade: "' + parentPreset + '" -> "' + modeId + '" adds capabilities: ' + added.slice(0, 8).join(', '))
-              } catch (error) { /* comparison is best-effort; spawning still validates the target */ }
-            }
-          }
+          const escalations = [
+            ...collectModelEscalations(parentModel, childModel),
+            ...(await collectPresetEscalations({ parentPreset, targetPreset: modeId, presets })),
+          ]
 
           if (escalations.length > 0) {
             if (approval === undefined) {
@@ -281,8 +107,10 @@ export default {
             signal: exec !== undefined ? exec.signal : undefined,
           })
 
-          if (effort !== undefined && typeof effort === 'string') effortByChild.set(started.childId, effort)
-          if (modeId !== undefined) modeByChild.set(started.childId, modeId)
+          policy.register(started.childId, {
+            ...(modeId !== undefined ? { mode: modeId } : {}),
+            ...(effort !== undefined && typeof effort === 'string' ? { effort } : {}),
+          })
 
           return jsonText({
             ok: true,
