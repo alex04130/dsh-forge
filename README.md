@@ -60,6 +60,23 @@ token 由 DSH 进程环境变量 `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_TOKEN`
 
 `npm run check`（全部 host/client 代码语法自检）。运行时验证：`dev_plugin_status`（注入器）、`skill_list`（技能）、`model_taxonomy`（路由）、`dev_router_status`（思维模式路由）。
 
+## 工具定义
+
+本套件注册的全部模型工具，按插件分组：
+
+| 插件 | 工具与用途 |
+|---|---|
+| **mailbridge**（跨会话消息桥） | `session_list`（列出会话）、`session_read`（读其他会话日志）、`session_send`（发消息给其他会话）、`mailbox_check`（收取离线来信） |
+| **llmrouter**（模型委派） | `model_list`（provider/model 目录 + byModel 反向索引）、`model_call`（一次性文本补全，非子代理） |
+| **modeswitch** | `switch_mode`（当前会话中途切换 agent preset，提权需确认） |
+| **teamhub**（代理团队） | `team_create` / `team_add_member` / `team_create_task` / `team_claim_task` / `team_update_task` / `team_send_message` / `team_status` / `team_delete` |
+| **modsub**（子代理派发） | `spawn_model_subagent`（可指定 provider/model/reasoningEffort/mode，默认全继承父，提权自动审批） |
+| **injector**（运行时注入） | `dev_inject_plugin` / `dev_uninject_plugin` / `dev_injected_list` / `dev_reload_package` / `dev_plugin_status` |
+| **modelroute**（路由策略） | `model_taxonomy`（模型系列与档位）、`model_route_status`（当前路由与父路由钳制） |
+| **skillmanager + sklui**（技能管理） | `skill_list` / `skill_show` / `skill_add` / `skill_disable` / `skill_enable` / `skill_remove`（持久技能，支持默认注入 / 渐进式披露） |
+| **plins**（插件市场） | `dev_stop_dyn_plugin`（按前缀紧急停动态插件）；另有市场面板 RPC（browse / installed / install / uninstall） |
+| **sfind** | `session_find`（按 id/标题关键字查会话，省上下文） |
+
 ## 截图
 
 | 技能管理面板（两层视图） | 插件市场 | 侧栏（竖排） |
