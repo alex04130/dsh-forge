@@ -35,14 +35,33 @@ DSH 的插件生态和 Minecraft 的 mod 生态很像：一个稳定的宿主（
 
 ## 安装
 
+**推荐：npm 包（官方插件机制，含全部 host 插件）**
+
+```sh
+dsh plugin --profile web add @dsh-forge/bundle
+```
+
+`@dsh-forge/bundle` 声明官方 `dsh.bundle.patch` manifest，`dsh plugin add` 会自动把它注册进 profile 的 patch 层；装完重启 DSH（`dsh web`）即可。
+
+**可选组件：任务感知路由 preset（手动复制）**
+
+```sh
+cp -r presets/router-standard $DSH_HOME/.agent-presets/
+# 新建会话选择「路由标准（实验性）」preset
+```
+
+npm bundle 不含 preset 与动态面板，需要时从源码仓库复制。
+
+**从源码安装（完整套件：host 插件 + 动态面板 + preset）**
+
 ```sh
 git clone https://github.com/alex04130/dsh-forge.git
 cd dsh-forge
 node scripts/install.mjs     # 复制到 $DSH_HOME，自动备份、幂等
-# 重启 DSH（dsh web），新建会话选择 Router Standard (experimental) preset
+# 重启 DSH（dsh web），新建会话选择「路由标准（实验性）」preset
 ```
 
-或手动对照 `bundle/`、`dynamic/`、`presets/` 目录复制；npm 包形态：`dsh plugin --profile web add <path>/bundle`。
+或手动对照 `bundle/`、`dynamic/`、`presets/` 目录复制；本地路径形态：`dsh plugin --profile web add <path>/bundle`。
 
 ### 可选：GitHub MCP 工具（mcp__github__*）
 
