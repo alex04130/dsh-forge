@@ -15,9 +15,12 @@ function jsonText(value) {
   return JSON.stringify(value, null, 2)
 }
 function callerId(exec, agents) {
+  // Identity for team AUTHORIZATION decisions must come from the tool's own
+  // execution context only. The initiator fallback previously misattributed
+  // members as the captain in some call paths (a member was refused as
+  // "you are the captain", and team_delete authorization could be spoofed);
+  // without exec.agent we fail closed instead of guessing.
   if (exec !== undefined && exec.agent !== undefined && typeof exec.agent.id === 'string') return exec.agent.id
-  const initiator = agents.currentInitiator()
-  if (initiator !== undefined && typeof initiator.id === 'string') return initiator.id
   return undefined
 }
 const TASK_STATUSES = ['pending', 'claimed', 'in_progress', 'completed', 'failed', 'cancelled']
@@ -178,20 +181,30 @@ export default {
       const agentOptions = {}
       if (explicitProvider !== undefined) agentOptions.provider = explicitProvider
       if (explicitModel !== undefined) agentOptions.model = explicitModel
-      const started = await subagents.startContinuable({
-        provider: 'spawn',
-        label: memberId + ' (' + role + ')',
-        request: {
-          prompt: [{ type: 'text', text: persona }],
-          parent: agent,
-          ...(Object.keys(agentOptions).length > 0 ? { agentOptions } : {}),
-        },
-        signal: exec !== undefined ? exec.signal : undefined,
-      })
-      policy.register(started.childId, {
+      // Stage mode/effort BEFORE the spawn (startContinuable dispatches
+      // agent/created synchronously before resolving — same timing contract
+      // as modsub; see lib/subagent-policy.mjs installChildPolicy).
+      const staged = policy.prepare({
+        parentId: agent.id,
         ...(modeId !== undefined ? { mode: modeId } : {}),
         ...(effort !== undefined && typeof effort === 'string' ? { effort } : {}),
       })
+      let started
+      try {
+        started = await subagents.startContinuable({
+          provider: 'spawn',
+          label: memberId + ' (' + role + ')',
+          request: {
+            prompt: [{ type: 'text', text: persona }],
+            parent: agent,
+            ...(Object.keys(agentOptions).length > 0 ? { agentOptions } : {}),
+          },
+          signal: exec !== undefined ? exec.signal : undefined,
+        })
+      } catch (error) {
+        staged.cancel()
+        throw error
+      }
       team.members.push({ id: memberId, sessionId: started.childId, role, createdAt: Date.now() })
       await teamsUnit.putRecord('team', team.captain, team)
       return { ok: true, member: { id: memberId, sessionId: started.childId, role }, ...(modeId !== undefined ? { mode: modeId } : {}), ...(escalations.length > 0 ? { approvedEscalations: escalations } : {}) }
