@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-forge/host",
+  "name": "@dsh-forge/bundle",
   "version": "0.1.0",
   "description": "DSH extension suite host bundle: cross-session mailbox, agent teams, model delegation & routing policy, runtime injector, skill manager, dynamic-plugin boot, and the plugin/skill manager client packages.",
   "license": "MIT",
