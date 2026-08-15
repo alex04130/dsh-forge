@@ -8,7 +8,9 @@ window.__ModuleLoader__.load({
     const React = require('react')
 
     const css = [
-      '.plugmgr-root{width:100%;display:flex;align-items:center;margin-top:8px;position:relative;flex:none}',
+      '[class$="_footerActions"] { flex-direction: column; align-items: stretch; gap: 2px; }',
+      '[class*="collapsed"] [class$="_footerActions"] { align-items: center; }',
+      '.plugmgr-root{width:100%;box-sizing:border-box;flex:1 1 100%;min-width:0;display:flex;align-items:center;margin-top:8px;position:relative;flex:none}',
       '.plugmgr-badge{box-sizing:border-box;width:100%;height:32px;display:flex;align-items:center;gap:8px;padding:0 8px 0 6px;border:none;border-radius:12px;cursor:pointer;font-size:14px;font-family:inherit;color:var(--dsw-alias-label-secondary,inherit);background:transparent}',
       '.plugmgr-badge:hover{background:var(--dsw-alias-bg-hover,rgba(128,128,128,.08))}',
       '.plugmgr-overlay{position:fixed;inset:0;z-index:1000;display:flex;justify-content:center;align-items:center}',
@@ -340,27 +342,7 @@ window.__ModuleLoader__.load({
           React.createElement('div', { className: 'plugmgr-footer' },
             React.createElement('span', {}, '宿主插件随 dsh 启动加载；动态插件运行于 cordis-dynamic 分组 · ' + (hostEntries === null ? 0 : hostEntries.length) + ' 个 loader 条目'))))
 
-      // Keep this entry on its OWN row: the sidebar footer stacks sibling
-      // actions, so re-home our root right after the settings entry. Without
-      // this the badge shares a row with the official cordis action.
-      const rootRef = React.useRef(null)
-      React.useEffect(() => {
-        const root = rootRef.current
-        if (root === null) return
-        let cursor = root
-        for (let i = 0; i < 8 && cursor !== null && cursor.parentElement !== null; i++) {
-          cursor = cursor.parentElement
-          const next = cursor.nextElementSibling
-          if (next !== null && typeof next.className === 'string' && next.className.indexOf('settings') !== -1) {
-            const after = next.nextElementSibling
-            if (after !== null) cursor.parentElement.insertBefore(root, after)
-            else cursor.parentElement.appendChild(root)
-            return
-          }
-        }
-      }, [])
-
-      return React.createElement('div', { ref: rootRef, className: 'plugmgr-root' },
+      return React.createElement('div', { className: 'plugmgr-root' },
         React.createElement('button', {
           type: 'button',
           className: 'plugmgr-badge',
