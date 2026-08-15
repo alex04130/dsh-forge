@@ -10,6 +10,10 @@ window.__ModuleLoader__.load({
     const css = [
       '[class$="_footerActions"] { flex-direction: column; align-items: stretch; gap: 4px; }',
       '[class$="_footerActions"] > [class$="_layer"] { margin: 0; min-height: 49px; }',
+      '[class$="_footerActions"] button { color: var(--dsw-alias-label-primary, inherit); }',
+      '[class$="_footerActions"] [class$="_badgeCount"] { background: rgba(128,128,128,.14); color: var(--dsw-alias-label-primary, inherit); border-radius: 999px; padding: 0 8px; min-width: 20px; text-align: center; }',
+      '[class$="_footerActions"] button { transition: background .12s ease; border-radius: 8px !important; }',
+      '[class$="_footerActions"] button:hover { background: rgba(0,0,0,.05) !important; }',
       '[class*="collapsed"] [class$="_footerActions"] { align-items: center; }',
       '.plugmgr-root{display:flex;align-items:center;flex:0 1 auto;min-width:0;position:relative;order:-1}',
       '.plugmgr-badge{box-sizing:border-box;width:100%;height:49px;display:flex;align-items:center;gap:8px;padding:0 8px 0 6px;border:none;border-radius:12px;cursor:pointer;font-size:14px;font-family:inherit;color:var(--dsw-alias-label-primary,inherit);background:transparent}',
