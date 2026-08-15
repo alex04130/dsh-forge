@@ -39,6 +39,20 @@ export default {
     const skills = ctx.get('skills')
     const presets = ctx.get('agentPresets')
     const approval = ctx.get('approval')
+    const timer = ctx.get('timer')
+
+    // team_wait 挂起注册表：成员调用 team_wait 后回合挂起，直到目标成员的
+    // 消息到达、目标任务完成、队长发消息（消息到达即唤醒）、或超时。
+    const waiters = []
+    function wakeWaiters(predicate, payload) {
+      for (let i = waiters.length - 1; i >= 0; i -= 1) {
+        const w = waiters[i]
+        if (predicate(w)) {
+          waiters.splice(i, 1)
+          try { w.finish(payload) } catch (error) { /* best-effort */ }
+        }
+      }
+    }
 
     // Same delegation policy as spawn_model_subagent: team members get the
     // explicit mode / effort applied before their first prompt assembly, and
@@ -99,30 +113,137 @@ export default {
       return id
     }
 
-    async function getTeam(captain) {
+    async function getTeam(caller) {
       const teamsUnit = await requireUnit()
       const snapshot = await teamsUnit.loadAll()
       const table = snapshot !== undefined && snapshot.tables !== undefined && snapshot.tables['team'] !== undefined ? snapshot.tables['team'] : {}
-      const record = table[captain]
-      if (record === null || typeof record !== 'object') return undefined
-      return record
+      const direct = table[caller]
+      if (direct !== null && typeof direct === 'object') return direct
+      // 成员视角：按成员会话 id 反查所属团队
+      for (const key of Object.keys(table)) {
+        const record = table[key]
+        if (record !== null && typeof record === 'object' && memberOf(record, caller)) return record
+      }
+      return undefined
     }
 
     function memberOf(team, id) {
       return Array.isArray(team.members) && team.members.some((m) => m !== null && typeof m === 'object' && (m.id === id || m.sessionId === id))
     }
 
+    // Shared member-adding path: validation, escalation approval, spawn, and
+    // registration. Used by both team_add_member and team_create(members: [...]).
+    // Returns { ok, member?, error?, cancelled?, escalations?, mode? }.
+    async function addMember(team, spec, agent, exec, toolName) {
+      const memberId = cleanId(spec.memberId)
+      const role = String(spec.role ?? '').trim()
+      if (memberId.length === 0 || role.length === 0 || role.length > 120) {
+        return { ok: false, memberId: String(spec.memberId ?? ''), error: 'memberId must match [0-9a-zA-Z._-] (<=48) and role must be 1-120 characters' }
+      }
+      if (memberOf(team, memberId)) return { ok: false, memberId, error: 'member "' + memberId + '" already exists' }
+      if (team.members.length >= 16) return { ok: false, memberId, error: 'team member limit (16) reached' }
+
+      const explicitProvider = typeof spec.provider === 'string' && spec.provider.trim() !== '' ? spec.provider.trim() : undefined
+      const explicitModel = typeof spec.model === 'string' && spec.model.trim() !== '' ? spec.model.trim() : undefined
+      const explicitEffort = typeof spec.reasoningEffort === 'string' && spec.reasoningEffort.trim() !== '' ? spec.reasoningEffort.trim() : undefined
+      const modeId = typeof spec.mode === 'string' && spec.mode.trim() !== '' ? spec.mode.trim() : undefined
+
+      const route = policy.liveRoute(agent)
+      const parentHeader = agent.session?.requestHeader?.()
+      const parentPreset = presets !== undefined ? presets.composedPreset(agent.ctx) : undefined
+      const parentModel = route.model ?? parentHeader?.config?.model
+      const childModel = explicitModel ?? parentModel
+      const effort = explicitEffort ?? parentHeader?.config?.reasoningEffort
+
+      const escalations = [
+        ...collectModelEscalations(parentModel, childModel),
+        ...(await collectPresetEscalations({ parentPreset, targetPreset: modeId, presets })),
+      ]
+      if (escalations.length > 0) {
+        if (approval === undefined) {
+          return { ok: false, memberId, error: 'adding this member escalates (' + escalations.join('; ') + ') but no approval service is mounted to confirm it' }
+        }
+        const outcome = await approval.request({
+          agent,
+          toolName,
+          reason: 'team member escalation: ' + escalations.join('; '),
+          signal: exec !== undefined ? exec.signal : undefined,
+        })
+        if (outcome !== 'allowed-once') {
+          return { ok: false, memberId, cancelled: true, reason: 'the user did not allow this member escalation (approval outcome "' + String(outcome) + '"); no member was added', escalations }
+        }
+      }
+
+      const persona = 'You are member "' + memberId + '" (' + role + ') of agent team "' + team.name + '" led by captain session ' + team.captain + '. Team goal: ' + String(team.goal ?? '(none)') + '.\n\nWork protocol:\n- Claim and work only on tasks assigned to you (team_claim_task / team_update_task).\n- When a task is done, call team_update_task with status "completed" and put your result in output.\n- Talk to the captain or other members with team_send_message (their ids are in team_status).\n- Check team_status for your inbox and task state before acting.\n- Load the agent-teamwork skill for the full team protocol.\n\nYour mission from the captain:\n' + String(spec.prompt ?? '')
+      const agentOptions = {}
+      if (explicitProvider !== undefined) agentOptions.provider = explicitProvider
+      if (explicitModel !== undefined) agentOptions.model = explicitModel
+      const started = await subagents.startContinuable({
+        provider: 'spawn',
+        label: memberId + ' (' + role + ')',
+        request: {
+          prompt: [{ type: 'text', text: persona }],
+          parent: agent,
+          ...(Object.keys(agentOptions).length > 0 ? { agentOptions } : {}),
+        },
+        signal: exec !== undefined ? exec.signal : undefined,
+      })
+      policy.register(started.childId, {
+        ...(modeId !== undefined ? { mode: modeId } : {}),
+        ...(effort !== undefined && typeof effort === 'string' ? { effort } : {}),
+      })
+      team.members.push({ id: memberId, sessionId: started.childId, role, createdAt: Date.now() })
+      await teamsUnit.putRecord('team', team.captain, team)
+      return { ok: true, member: { id: memberId, sessionId: started.childId, role }, ...(modeId !== undefined ? { mode: modeId } : {}), ...(escalations.length > 0 ? { approvedEscalations: escalations } : {}) }
+    }
+
     registerTool('team_create',
-      '创建一个以你（调用会话）为队长的代理团队；一个队长同一时间只带领一个团队。之后用 `team_add_member` 添加成员、`team_create_task` 按依赖拆分任务、`team_send_message` 与成员交流。编排团队前先加载 agent-teamwork 技能：它涵盖团队设计、工作流和何时该沟通。',
+      '创建一个以你（调用会话）为队长的代理团队；一个队长同一时间只带领一个团队。可用 `members` 数组在建队时一次添加多个成员（每项含 memberId/role/prompt 及可选的 provider/model/reasoningEffort/mode，与 `team_add_member` 同策略：默认继承队长、提权逐项审批），可用 `tasks` 数组在建队时按数组序创建任务（每项含 title/description/assignee/dependencies；依赖引用的任务必须先出现在本数组或已存在于团队）。之后用 `team_add_member` 补成员、`team_add_members` 批量补成员、`team_create_task` 补任务、`team_send_message` 与成员交流。编排团队前先加载 agent-teamwork 技能：它涵盖团队设计、工作流和何时该沟通。',
       {
         name: { type: 'string', required: true, description: '简短团队名，如 "migration-squad"。' },
         goal: { type: 'string', description: '一行团队目标，送达各成员。' },
+        members: {
+          type: 'array',
+          description: '可选：建队时一次添加的成员数组；每项 { memberId, role, prompt, provider?, model?, reasoningEffort?, mode? }。逐项独立审批与失败隔离。',
+          items: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              memberId: { type: 'string', required: true, description: '成员 id，如 "researcher"。' },
+              role: { type: 'string', required: true, description: '角色描述。' },
+              prompt: { type: 'string', required: true, description: '成员初始任务。' },
+              provider: { type: 'string', description: '可选供应商路由。' },
+              model: { type: 'string', description: '可选模型 id。' },
+              reasoningEffort: { type: 'string', description: '可选思考强度。' },
+              mode: { type: 'string', description: '可选模式 id。' },
+            },
+          },
+        },
+        tasks: {
+          type: 'array',
+          description: '可选：建队时按数组序创建的任务；每项 { title, description?, assignee?, dependencies? }。依赖引用的任务必须先出现在本数组或已存在于团队。',
+          items: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              title: { type: 'string', required: true, description: '简短任务标题。' },
+              description: { type: 'string', description: '任务要求及验收标准。' },
+              assignee: { type: 'string', description: '要指派的成员 id，省略则进入可认领池。' },
+              dependencies: { type: 'array', description: '必须先完成的任务 id。' },
+            },
+          },
+        },
       },
       async (args, exec) => {
         const captain = callerId(exec, agents)
         if (captain === undefined) return jsonText({ ok: false, error: 'cannot determine the calling session id' })
+        const agent = exec !== undefined ? exec.agent : undefined
+        if (agent === undefined) return jsonText({ ok: false, error: 'no calling agent; team_create must run inside a session' })
         const name = String(args.name ?? '').trim()
         if (name.length === 0 || name.length > 64) return jsonText({ ok: false, error: 'team name must be 1-64 characters' })
+        const specs = Array.isArray(args.members) ? args.members.filter((m) => m !== null && typeof m === 'object') : []
+        if (specs.length > 16) return jsonText({ ok: false, error: 'at most 16 members per team' })
+        const taskSpecs = Array.isArray(args.tasks) ? args.tasks.filter((t) => t !== null && typeof t === 'object') : []
         const teamsUnit = await requireUnit()
         const created = await enqueue(async () => {
           const existing = await getTeam(captain)
@@ -138,9 +259,56 @@ export default {
             createdAt: Date.now(),
           }
           await teamsUnit.putRecord('team', captain, record)
-          return record
+          const memberResults = []
+          for (const spec of specs) {
+            try {
+              const result = await addMember(record, spec, agent, exec, 'team_create')
+              memberResults.push(result)
+            } catch (error) {
+              memberResults.push({ ok: false, memberId: String(spec.memberId ?? ''), error: errText(error) })
+            }
+          }
+          const taskResults = []
+          for (const spec of taskSpecs) {
+            const title = String(spec.title ?? '').trim()
+            if (title.length === 0 || title.length > 160) {
+              taskResults.push({ ok: false, error: 'title must be 1-160 characters' })
+              continue
+            }
+            const taskId = 't' + String(record.nextTask)
+            const deps = Array.isArray(spec.dependencies) ? spec.dependencies.map((d) => String(d)).filter((d) => d.length > 0) : []
+            const assignee = String(spec.assignee ?? '').trim()
+            const badDep = deps.find((dep) => !record.tasks.some((t) => t !== null && typeof t === 'object' && t.id === dep))
+            if (badDep !== undefined) {
+              taskResults.push({ ok: false, title, error: 'dependency "' + badDep + '" is not an earlier task of this team' })
+              continue
+            }
+            if (assignee.length > 0 && !memberOf(record, assignee)) {
+              taskResults.push({ ok: false, title, error: 'assignee "' + assignee + '" is not a team member' })
+              continue
+            }
+            record.tasks.push({
+              id: taskId,
+              title,
+              description: String(spec.description ?? ''),
+              assignee: assignee.length > 0 ? assignee : null,
+              dependencies: deps,
+              status: 'pending',
+              output: null,
+              createdAt: Date.now(),
+            })
+            record.nextTask += 1
+            taskResults.push({ ok: true, taskId, title })
+          }
+          await teamsUnit.putRecord('team', captain, record)
+          return { record, memberResults, taskResults }
         })
-        return jsonText({ ok: true, team: created })
+        return jsonText({
+          ok: true,
+          team: created.record,
+          ...(created.memberResults.length > 0 ? { memberResults: created.memberResults } : {}),
+          ...(created.taskResults.length > 0 ? { taskResults: created.taskResults } : {}),
+        })
       })
 
     registerTool('team_add_member',
@@ -159,68 +327,58 @@ export default {
         if (captain === undefined) return jsonText({ ok: false, error: 'cannot determine the calling session id' })
         const agent = exec !== undefined ? exec.agent : undefined
         if (agent === undefined) return jsonText({ ok: false, error: 'no calling agent; team_add_member must run inside a session' })
-        const memberId = cleanId(args.memberId)
-        const role = String(args.role ?? '').trim()
-        if (memberId.length === 0 || role.length === 0 || role.length > 120) return jsonText({ ok: false, error: 'memberId must match [0-9a-zA-Z._-] (<=48) and role must be 1-120 characters' })
         const teamsUnit = await requireUnit()
         return await enqueue(async () => {
           const team = await getTeam(captain)
           if (team === undefined) return jsonText({ ok: false, error: 'no team found; call team_create first' })
-          if (memberOf(team, memberId)) return jsonText({ ok: false, error: 'member "' + memberId + '" already exists' })
-          if (team.members.length >= 8) return jsonText({ ok: false, error: 'team member limit (8) reached' })
+          const result = await addMember(team, args, agent, exec, 'team_add_member')
+          return jsonText(result)
+        })
+      })
 
-          const explicitProvider = typeof args.provider === 'string' && args.provider.trim() !== '' ? args.provider.trim() : undefined
-          const explicitModel = typeof args.model === 'string' && args.model.trim() !== '' ? args.model.trim() : undefined
-          const explicitEffort = typeof args.reasoningEffort === 'string' && args.reasoningEffort.trim() !== '' ? args.reasoningEffort.trim() : undefined
-          const modeId = typeof args.mode === 'string' && args.mode.trim() !== '' ? args.mode.trim() : undefined
-
-          const route = policy.liveRoute(agent)
-          const parentHeader = agent.session?.requestHeader?.()
-          const parentPreset = presets !== undefined ? presets.composedPreset(agent.ctx) : undefined
-          const parentModel = route.model ?? parentHeader?.config?.model
-          const childModel = explicitModel ?? parentModel
-          const effort = explicitEffort ?? parentHeader?.config?.reasoningEffort
-
-          const escalations = [
-            ...collectModelEscalations(parentModel, childModel),
-            ...(await collectPresetEscalations({ parentPreset, targetPreset: modeId, presets })),
-          ]
-          if (escalations.length > 0) {
-            if (approval === undefined) {
-              return jsonText({ ok: false, error: 'adding this member escalates (' + escalations.join('; ') + ') but no approval service is mounted to confirm it' })
-            }
-            const outcome = await approval.request({
-              agent,
-              toolName: 'team_add_member',
-              reason: 'team member escalation: ' + escalations.join('; '),
-              signal: exec !== undefined ? exec.signal : undefined,
-            })
-            if (outcome !== 'allowed-once') {
-              return jsonText({ ok: false, cancelled: true, reason: 'the user did not allow this member escalation (approval outcome "' + String(outcome) + '"); no member was added', escalations })
+    registerTool('team_add_members',
+      '批量添加团队成员：一次传入多个成员数组（每项含 memberId/role/prompt 及可选的 provider/model/reasoningEffort/mode）。逐项独立审批与失败隔离：某个成员提权被拒绝或 spawn 失败只影响该项，其余继续。与 `team_add_member`（单个）同策略。完整工作流见 agent-teamwork 技能。',
+      {
+        members: {
+          type: 'array',
+          required: true,
+          description: '成员数组；每项 { memberId, role, prompt, provider?, model?, reasoningEffort?, mode? }。',
+          items: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              memberId: { type: 'string', required: true, description: '成员 id，如 "researcher"。' },
+              role: { type: 'string', required: true, description: '角色描述。' },
+              prompt: { type: 'string', required: true, description: '成员初始任务。' },
+              provider: { type: 'string', description: '可选供应商路由。' },
+              model: { type: 'string', description: '可选模型 id。' },
+              reasoningEffort: { type: 'string', description: '可选思考强度。' },
+              mode: { type: 'string', description: '可选模式 id。' },
+            },
+          },
+        },
+      },
+      async (args, exec) => {
+        const captain = callerId(exec, agents)
+        if (captain === undefined) return jsonText({ ok: false, error: 'cannot determine the calling session id' })
+        const agent = exec !== undefined ? exec.agent : undefined
+        if (agent === undefined) return jsonText({ ok: false, error: 'no calling agent; team_add_members must run inside a session' })
+        const specs = Array.isArray(args.members) ? args.members.filter((m) => m !== null && typeof m === 'object') : []
+        if (specs.length === 0) return jsonText({ ok: false, error: 'members must be a non-empty array' })
+        const teamsUnit = await requireUnit()
+        return await enqueue(async () => {
+          const team = await getTeam(captain)
+          if (team === undefined) return jsonText({ ok: false, error: 'no team found; call team_create first' })
+          const results = []
+          for (const spec of specs) {
+            try {
+              const result = await addMember(team, spec, agent, exec, 'team_add_members')
+              results.push(result)
+            } catch (error) {
+              results.push({ ok: false, memberId: String(spec.memberId ?? ''), error: errText(error) })
             }
           }
-
-          const persona = 'You are member "' + memberId + '" (' + role + ') of agent team "' + team.name + '" led by captain session ' + captain + '. Team goal: ' + String(team.goal ?? '(none)') + '.\n\nWork protocol:\n- Claim and work only on tasks assigned to you (team_claim_task / team_update_task).\n- When a task is done, call team_update_task with status "completed" and put your result in output.\n- Talk to the captain or other members with team_send_message (their ids are in team_status).\n- Check team_status for your inbox and task state before acting.\n- Load the agent-teamwork skill for the full team protocol.\n\nYour mission from the captain:\n' + String(args.prompt ?? '')
-          const agentOptions = {}
-          if (explicitProvider !== undefined) agentOptions.provider = explicitProvider
-          if (explicitModel !== undefined) agentOptions.model = explicitModel
-          const started = await subagents.startContinuable({
-            provider: 'spawn',
-            label: memberId + ' (' + role + ')',
-            request: {
-              prompt: [{ type: 'text', text: persona }],
-              parent: agent,
-              ...(Object.keys(agentOptions).length > 0 ? { agentOptions } : {}),
-            },
-            signal: exec !== undefined ? exec.signal : undefined,
-          })
-          policy.register(started.childId, {
-            ...(modeId !== undefined ? { mode: modeId } : {}),
-            ...(effort !== undefined && typeof effort === 'string' ? { effort } : {}),
-          })
-          team.members.push({ id: memberId, sessionId: started.childId, role, createdAt: Date.now() })
-          await teamsUnit.putRecord('team', captain, team)
-          return jsonText({ ok: true, member: { id: memberId, sessionId: started.childId, role }, ...(modeId !== undefined ? { mode: modeId } : {}), ...(escalations.length > 0 ? { approvedEscalations: escalations } : {}) })
+          return jsonText({ ok: true, teamName: team.name, results })
         })
       })
 
@@ -346,7 +504,55 @@ export default {
           task.status = status
           if (typeof args.output === 'string' && args.output.length > 0) task.output = args.output
           await teamsUnit.putRecord('team', captain, team)
+          if (status === 'completed') wakeWaiters((w) => w.taskId !== null && w.taskId !== undefined && w.taskId === taskId, { ok: true, wokenBy: 'task-completed', taskId })
           return jsonText({ ok: true, taskId, status, teamName: team.name })
+        })
+      })
+
+    registerTool('team_wait',
+      '暂停当前回合，等待另一名队员的消息或某个任务的完成（两者都给时任一满足即唤醒）。等待期间回合挂起、不消耗额外步骤：目标发来消息、目标任务 completed、或队长发来任何消息都会立即唤醒你继续。超时（默认 600 秒，上限 3600 秒）后返回 timeout，模型可再次调用继续等。队长随时可发消息拆掉等待，因此不会死锁。',
+      {
+        memberId: { type: 'string', description: '要等待的成员 id；省略则等待任意消息。' },
+        taskId: { type: 'string', description: '要等待的任务 id（如 "t2"）；该任务 completed 时唤醒。' },
+        timeoutSeconds: { type: 'number', description: '最长等待秒数（默认 600，上限 3600）。' },
+      },
+      async (args, exec) => {
+        const me = callerId(exec, agents)
+        if (me === undefined) return jsonText({ ok: false, error: 'cannot determine the calling session id' })
+        const memberId = cleanId(args.memberId)
+        const taskId = String(args.taskId ?? '').trim()
+        if (memberId.length === 0 && taskId.length === 0) return jsonText({ ok: false, error: 'memberId or taskId is required' })
+        const team = await getTeam(me)
+        if (team === undefined) return jsonText({ ok: false, error: 'you are not part of any team; call team_create first' })
+        if (memberId.length > 0 && !memberOf(team, memberId)) return jsonText({ ok: false, error: 'member "' + memberId + '" is not a team member' })
+        if (taskId.length > 0) {
+          const target = team.tasks.find((t) => t !== null && typeof t === 'object' && t.id === taskId)
+          if (target === undefined) return jsonText({ ok: false, error: 'task "' + taskId + '" is not a task of this team' })
+          if (target.status === 'completed') return jsonText({ ok: true, wokenBy: 'task-completed', taskId, note: 'the task was already completed before the wait started' })
+        }
+        const timeoutSec = typeof args.timeoutSeconds === 'number' && args.timeoutSeconds > 0 ? Math.min(Math.floor(args.timeoutSeconds), 3600) : 600
+        if (timer === undefined || typeof timer.timeout !== 'function') {
+          return jsonText({ ok: false, error: 'timer service unavailable; waiting is disabled — poll team_status instead' })
+        }
+        return await new Promise((resolve) => {
+          let settled = false
+          const entry = { sessionId: me, memberId: memberId.length > 0 ? memberId : null, taskId: taskId.length > 0 ? taskId : null, finish: null }
+          let timeoutDispose = null
+          const finish = (payload) => {
+            if (settled) return
+            settled = true
+            const idx = waiters.indexOf(entry)
+            if (idx >= 0) waiters.splice(idx, 1)
+            if (timeoutDispose !== null) { try { timeoutDispose() } catch (error) { /* best-effort */ } }
+            resolve(jsonText(payload))
+          }
+          entry.finish = finish
+          waiters.push(entry)
+          timeoutDispose = timer.timeout(() => finish({ ok: true, wokenBy: 'timeout', afterSeconds: timeoutSec }), timeoutSec * 1000)
+          const signal = exec !== undefined ? exec.signal : undefined
+          if (signal !== undefined && typeof signal.addEventListener === 'function') {
+            signal.addEventListener('abort', () => finish({ ok: false, error: 'wait aborted (turn cancelled)' }), { once: true })
+          }
         })
       })
 
@@ -406,6 +612,7 @@ export default {
             try {
               if (typeof target.status === 'string' && target.status === 'running') target.steer(message)
               else target.followup(message)
+              wakeWaiters((w) => w.sessionId === targetSession, { ok: true, wokenBy: 'message', from: me })
               return jsonText({ ok: true, delivered: 'live', to, messageId: message.id })
             } catch (error) { /* fall through to the durable queue */ }
           }
@@ -416,6 +623,7 @@ export default {
             text: wrapped,
             ts: Date.now(),
           })
+          wakeWaiters((w) => w.sessionId === targetSession, { ok: true, wokenBy: 'message', from: me })
           return jsonText({ ok: true, delivered: 'queued', to, messageId: message.id })
         })
       })
@@ -477,6 +685,7 @@ export default {
         return await enqueue(async () => {
           const team = await getTeam(captain)
           if (team === undefined) return jsonText({ ok: false, error: 'no team found for this captain' })
+          if (team.captain !== captain) return jsonText({ ok: false, error: 'only the team captain may delete the team' })
           if (agent !== undefined) {
             for (const member of team.members) {
               try { subagents.interrupt(member.sessionId, { kind: 'ancestor', agent }) } catch (error) { /* best-effort */ }
@@ -488,6 +697,12 @@ export default {
           return jsonText({ ok: true, archived: team.teamId, name: team.name, note: 'team archived; members stopped where possible' })
         })
       })
+    ctx.on('agent/disposed', (payload) => {
+      const agent = payload !== undefined && payload.agent !== undefined ? payload.agent : undefined
+      if (agent === undefined || typeof agent.id !== 'string') return
+      wakeWaiters((w) => w.sessionId === agent.id, { ok: false, error: 'wait aborted (member session disposed)' })
+    })
+
     ctx.on('agent/session-start', (payload) => {
       const agent = payload !== undefined && payload.agent !== undefined ? payload.agent : undefined
       if (agent === undefined || typeof agent.id !== 'string') return
