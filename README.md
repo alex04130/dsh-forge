@@ -61,7 +61,7 @@ bundle/     host 插件（cordis.patch.yml + plugins/*.mjs + @local 客户端包
 dynamic/    动态插件清单（auto-plugins.json）
 presets/    router-standard agent 预设
 scripts/    install.mjs / check.mjs
-docs/       架构文档（注入方式对比、分层规则、锚定规则、cache 规则、npm 升级风险）
+docs/       架构文档（注入方式对比、分层规则、锚定规则、cache 规则、npm 升级风险、自研 subagent provider 设计）
 ```
 
 ## 架构文档
