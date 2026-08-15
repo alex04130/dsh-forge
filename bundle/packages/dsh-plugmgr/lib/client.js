@@ -371,7 +371,7 @@ window.__ModuleLoader__.load({
           {
             name: 'sidebar.footer.action',
             id: 'plugin-manager',
-            order: -10,
+            order: 1,
             label: () => '插件',
           },
           ManagerButton,
