@@ -133,6 +133,7 @@ export function collectModelEscalations(parentModel, childModel) {
 // pre-step/request hooks while the child is still unpublished.
 export function installChildPolicy(ctx, presets) {
   const agents = ctx.get('agents')
+  const sessionPersistence = ctx.get('sessionPersistence')
   const modeByChild = new Map()
   const effortByChild = new Map()
   // Staged options keyed by the PARENT session id (FIFO per parent): written
@@ -207,6 +208,42 @@ export function installChildPolicy(ctx, presets) {
 
     if (modeId !== undefined) attachMode(agent, modeId)
     if (effort !== undefined) attachEffort(agent, effort)
+
+    // 3) log correction: a resumed child whose session log records a preset
+    // selection (deferred UI switch while offline, or a prior switch_mode)
+    // must come back on THAT preset, not on the parent's current composition.
+    // The in-process followup path (coldResume → composeFrom(parent)) ignores
+    // the log, which silently reverted deferred switches to the parent preset.
+    // The hook is attached unconditionally and the inspect runs INSIDE the
+    // first pre-step so the timing guarantee matches the staged path.
+    if (modeId === undefined && sid !== undefined && presets !== undefined && sessionPersistence !== undefined && typeof sessionPersistence.inspect === 'function') {
+      try {
+        const preStepOff = agent.ctx.on('agent/pre-step', async (_payload, next) => {
+          try { preStepOff() } catch (error) { /* best-effort */ }
+          try {
+            const inspection = await sessionPersistence.inspect(sid)
+            let logged = undefined
+            for (const event of (Array.isArray(inspection.events) ? inspection.events : [])) {
+              if (event !== null && typeof event === 'object' && event.type === 'agent-preset/selected' && event.data !== null && typeof event.data === 'object' && typeof event.data.agentPreset === 'string') logged = event.data.agentPreset
+            }
+            if (logged !== undefined) {
+              let current = undefined
+              try { current = presets.composedPreset(agent.ctx) } catch (error) { current = undefined }
+              if (current !== logged) {
+                await presets.recompose(agent.ctx, logged)
+                try { agent.session.append('agent-preset/selected', { agentPreset: logged }) } catch (error) { /* durable record is best-effort */ }
+              }
+            }
+          } catch (error) {
+            console.error('[subagent-policy] log-correction recompose failed for', agent.id, ':', String(error && error.message ? error.message : error))
+          }
+          return next()
+        }, { prepend: true })
+        preStepDisposers.set(agent.id, preStepOff)
+      } catch (error) {
+        console.error('[subagent-policy] failed to install log correction for', agent.id, ':', String(error && error.message ? error.message : error))
+      }
+    }
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
