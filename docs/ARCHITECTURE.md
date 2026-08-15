@@ -135,6 +135,7 @@ gitdk（disabled）、modpk、modlpk、imgsub、**sklui**（skill 管理器：6 
 
 - ~~「用户输入在系统提示词之前注入」~~ **已关闭**：数据面无串位——首轮 system 极短（183/48 字符）是观感问题；两个 `system=[{}]` 空 request/header 已确认是 `dsh-agent-loop` `buildRequest` 的 seed 占位（`requestHeaderLogged=false` 时先 append 由 `{provider,model,reasoningEffort,maxTokens}` 派生的 initial header，此时 system 尚未组装，`canonicalHeader` 拿到空占位；claim 用户消息 + `system-prompt/assemble` 之后才 append 带真实 system 的 change header）。
 - **upstream：侧栏 Settings 行与 Cordis/自定义行原生不对齐**（2026-08-15 实测）：Settings 是独立组件，labelX 42 vs 40、按钮高 34 vs 49、左缘 x 8 vs 12。按"系统零接触"原则不修，归 DSH upstream（配合 #17 反转路线的终局方案）。
+- **backlog：非法 reasoningEffort 值静默失败**（sync #40 验证时发现）：spawn/team 显式传非法 effort（如 `low`，deepseek 枚举只有 off/high/max）导致子代理无输出静默失败——待加 effort 合法性校验 + fail-loud（明确报错而非静默）。
 
 ## 9. 验证记录（2026-08-15）
 
