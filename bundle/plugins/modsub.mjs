@@ -1,6 +1,6 @@
 // description: 子代理派发（spawn_model_subagent）：可选 provider/model/effort/模式，默认全继承父代理，提权自动问用户。
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { collectModelEscalations, collectPresetEscalations, installChildPolicy } from './lib/subagent-policy.mjs'
+import { collectModelEscalations, collectPresetEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
 
 function errText(error) {
   if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
@@ -34,6 +34,7 @@ export default {
     const subagents = ctx.subagents
     const presets = ctx.get('agentPresets')
     const approval = ctx.get('approval')
+    const llm = ctx.get('llm')
 
     const policy = installChildPolicy(ctx, presets)
 
@@ -71,6 +72,11 @@ export default {
           const childModel = explicitModel ?? parentModel
           const childProvider = explicitProvider ?? route.provider
           const effort = explicitEffort ?? parentHeader?.config?.reasoningEffort
+
+          if (explicitEffort !== undefined && childProvider !== undefined && childModel !== undefined) {
+            const check = await validateEffort(llm, childProvider, childModel, explicitEffort)
+            if (check.ok === false) return jsonText({ ok: false, error: check.error })
+          }
 
           const escalations = [
             ...collectModelEscalations(parentModel, childModel),
