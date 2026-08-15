@@ -1,6 +1,6 @@
 // description: 子代理派发（spawn_model_subagent）：可选 provider/model/effort/模式，默认全继承父代理，提权自动问用户。
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { collectModelEscalations, collectPresetEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
+import { collectModelEscalations, collectPresetEscalations, collectSandboxEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
 
 function errText(error) {
   if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
@@ -35,6 +35,7 @@ export default {
     const presets = ctx.get('agentPresets')
     const approval = ctx.get('approval')
     const llm = ctx.get('llm')
+    const sandboxPolicy = ctx.get('sandboxPolicy')
 
     const policy = installChildPolicy(ctx, presets)
 
@@ -48,6 +49,7 @@ export default {
         model: { type: 'string', description: '可选的子会话模型 id；省略则继承父级当前模型。可用模型见 `model_list`。' },
         reasoningEffort: { type: 'string', description: '可选的子会话思考强度（供应商专属 id，如 "low"/"medium"/"high"）；省略则继承父级当前强度。' },
         mode: { type: 'string', description: '可选的子会话模式 id（如 "router-standard"、"cordis"）；省略则继承父级组合。' },
+        sandbox: { type: 'string', description: '可选的子会话沙箱模式（"read-only" | "workspace-write" | "danger-full-access"）；省略则继承部署默认。比父级更宽的写权限会请求审批。' },
       },
       output: {
         schema: { type: 'string' },
@@ -64,6 +66,7 @@ export default {
           const explicitModel = typeof args.model === 'string' && args.model.trim() !== '' ? args.model.trim() : undefined
           const explicitEffort = typeof args.reasoningEffort === 'string' && args.reasoningEffort.trim() !== '' ? args.reasoningEffort.trim() : undefined
           const modeId = typeof args.mode === 'string' && args.mode.trim() !== '' ? args.mode.trim() : undefined
+          const sandboxMode = typeof args.sandbox === 'string' && args.sandbox.trim() !== '' ? args.sandbox.trim() : undefined
 
           const route = policy.liveRoute(agent)
           const parentHeader = agent.session?.requestHeader?.()
@@ -72,6 +75,11 @@ export default {
           const childModel = explicitModel ?? parentModel
           const childProvider = explicitProvider ?? route.provider
           const effort = explicitEffort ?? parentHeader?.config?.reasoningEffort
+          let parentSandbox = undefined
+          if (sandboxPolicy !== undefined && typeof sandboxPolicy.overrideOf === 'function') {
+            try { parentSandbox = sandboxPolicy.overrideOf(agent.session) } catch (error) { parentSandbox = undefined }
+          }
+          if (parentSandbox === undefined) parentSandbox = sandboxPolicy !== undefined ? sandboxPolicy.defaultMode : undefined
 
           if (explicitEffort !== undefined && childProvider !== undefined && childModel !== undefined) {
             const check = await validateEffort(llm, childProvider, childModel, explicitEffort)
@@ -81,6 +89,7 @@ export default {
           const escalations = [
             ...collectModelEscalations(parentModel, childModel),
             ...(await collectPresetEscalations({ parentPreset, targetPreset: modeId, presets })),
+            ...collectSandboxEscalations(parentSandbox, sandboxMode),
           ]
 
           if (escalations.length > 0) {
@@ -109,6 +118,7 @@ export default {
             parentId: agent.id,
             ...(modeId !== undefined ? { mode: modeId } : {}),
             ...(effort !== undefined && typeof effort === 'string' ? { effort } : {}),
+            ...(sandboxMode !== undefined ? { sandbox: sandboxMode } : {}),
           })
 
           let started
@@ -134,6 +144,7 @@ export default {
             messageId: started.messageId,
             route: { provider: childProvider, model: childModel, reasoningEffort: effort ?? null },
             ...(modeId !== undefined ? { mode: modeId } : {}),
+            ...(sandboxMode !== undefined ? { sandbox: sandboxMode } : {}),
             ...(escalations.length > 0 ? { approvedEscalations: escalations } : {}),
             note: 'the child session inherits this session composition (same tools, same workspace); send it follow-up input by opening its session in the GUI',
           })

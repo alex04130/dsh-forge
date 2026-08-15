@@ -120,6 +120,29 @@ export function collectModelEscalations(parentModel, childModel) {
   return []
 }
 
+// ── sandbox (workspace access) policy ──────────────────────────────────────
+// Mirrors the official sandbox/mode fold: read-only < workspace-write <
+// danger-full-access. A child may be spawned with an explicit sandbox mode;
+// widening access above the parent's effective mode is an escalation.
+export const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access']
+
+export function sandboxRank(mode) {
+  return SANDBOX_MODES.indexOf(String(mode ?? ''))
+}
+
+/** Escalation strings for an explicit child sandbox vs the parent's effective mode. */
+export function collectSandboxEscalations(parentMode, childMode) {
+  if (childMode === undefined || childMode === null) return []
+  const childRank = sandboxRank(childMode)
+  if (childRank < 0) return ['unknown sandbox mode "' + childMode + '"; supported: ' + SANDBOX_MODES.join(', ')]
+  const base = parentMode !== undefined && parentMode !== null ? parentMode : 'workspace-write'
+  const parentRank = sandboxRank(base)
+  if (childRank > parentRank) {
+    return ['sandbox upgrade: ' + base + ' -> ' + childMode + ' (child gains broader file access)']
+  }
+  return []
+}
+
 // ── effort validation ──────────────────────────────────────────────────────
 // An explicit reasoningEffort that the target route does not declare fails
 // SILENTLY at request time (the child produces no output and no closing
@@ -207,6 +230,7 @@ export function installChildPolicy(ctx, presets) {
     // 1) consume the staged options prepared before spawn (FIFO per parent)
     let modeId = undefined
     let effort = undefined
+    let sandboxMode = undefined
     let parentId = undefined
     try { parentId = agent.session !== undefined && agent.session.header !== undefined ? agent.session.header.parentSession : undefined } catch (error) { parentId = undefined }
     if (typeof parentId === 'string' && parentId.length > 0) {
@@ -216,6 +240,7 @@ export function installChildPolicy(ctx, presets) {
         if (q.length === 0) stagedByParent.delete(parentId)
         modeId = staged.mode
         effort = staged.effort
+        sandboxMode = staged.sandbox
       }
     }
     // 2) fall back to the by-child maps (register-after-spawn compat path)
@@ -228,6 +253,13 @@ export function installChildPolicy(ctx, presets) {
 
     if (modeId !== undefined) attachMode(agent, modeId)
     if (effort !== undefined) attachEffort(agent, effort)
+    // Explicit sandbox: the switch IS its event; append before the first step
+    // so every confined call in the child folds the requested mode.
+    if (sandboxMode !== undefined && typeof agent.session === 'object' && agent.session !== null && typeof agent.session.append === 'function') {
+      try { agent.session.append('sandbox/mode', { mode: sandboxMode }) } catch (error) {
+        console.error('[subagent-policy] sandbox mode append failed for', agent.id, ':', String(error && error.message ? error.message : error))
+      }
+    }
 
     // 3) log correction: a resumed child whose session log records a preset
     // selection (deferred UI switch while offline, or a prior switch_mode)
@@ -282,10 +314,10 @@ export function installChildPolicy(ctx, presets) {
   return {
     /** Stage options for the next child of one parent; call BEFORE startContinuable. */
     prepare(options = {}) {
-      if (options.mode === undefined && options.effort === undefined) return { cancel() {} }
+      if (options.mode === undefined && options.effort === undefined && options.sandbox === undefined) return { cancel() {} }
       const parentId = String(options.parentId ?? '')
       if (parentId === '') return { cancel() {} }
-      const entry = { mode: options.mode, effort: options.effort }
+      const entry = { mode: options.mode, effort: options.effort, sandbox: options.sandbox }
       const q = stagedByParent.get(parentId)
       if (q === undefined) stagedByParent.set(parentId, [entry])
       else q.push(entry)
