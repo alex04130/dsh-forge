@@ -339,11 +339,11 @@ export default {
             }
           }
           if (targetSession === undefined) return jsonText({ ok: false, error: 'recipient "' + to + '" is not part of your team' })
-          const prefix = '[team message from ' + me + ']'
+          const wrapped = '<team-message from="' + me + '" to="' + to + '">\n' + text + '\n</team-message>'
           const message = {
             id: makeId('m'),
             role: 'user',
-            content: [{ type: 'text', text: prefix + '\n\n' + text }],
+            content: [{ type: 'text', text: wrapped }],
             source: { kind: 'user', rpcId: makeId('rpc'), senderSessionId: me },
           }
           const target = agents.get(targetSession)
@@ -358,7 +358,7 @@ export default {
             id: message.id,
             from: me,
             to: targetSession,
-            text: prefix + '\n\n' + text,
+            text: wrapped,
             ts: Date.now(),
           })
           return jsonText({ ok: true, delivered: 'queued', to, messageId: message.id })

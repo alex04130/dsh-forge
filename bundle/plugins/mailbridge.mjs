@@ -201,11 +201,12 @@ export default {
         const from = callerId(exec, agents)
         const fromName = await callerName(from)
         const senderLabel = fromName !== null ? fromName + ' (' + from + ')' : (from ?? 'unknown')
-        const prefix = '[cross-session message from ' + senderLabel + ']'
+        const openTag = '<cross-session-message from="' + senderLabel + '" id="' + makeId('m') + '">'
+        const wrapped = openTag + '\n' + body + '\n</cross-session-message>'
         const message = {
           id: makeId('m'),
           role: 'user',
-          content: [{ type: 'text', text: prefix + '\n\n' + body }],
+          content: [{ type: 'text', text: wrapped }],
           source: from === undefined
             ? { kind: 'user', rpcId: makeId('rpc') }
             : { kind: 'user', rpcId: makeId('rpc'), senderSessionId: from },
@@ -229,7 +230,7 @@ export default {
           from: from ?? null,
           fromName,
           to: targetId,
-          text: prefix + '\n\n' + body,
+          text: wrapped,
           ts: Date.now(),
         }))
         return jsonText({ ok: true, delivered: 'queued', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName })
