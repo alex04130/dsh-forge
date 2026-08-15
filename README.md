@@ -1,71 +1,75 @@
-# DSH Extension Suite（DSH 扩展套件）
+# dsh-forge · DSH 锻造台
 
-> **Topics**: [`dsh-plugin`](https://github.com/topics/dsh-plugin) · [`deepseek-harness`](https://github.com/topics/deepseek-harness) · [`dsh`](https://github.com/topics/dsh) · [`cordis`](https://github.com/topics/cordis) ｜ 发现更多 DSH 插件：[github.com/topics/dsh-plugin](https://github.com/topics/dsh-plugin)
+> DeepSeek Harness 的运行时扩展套件：像 Minecraft 的 Forge 一样，为 DSH 锻造、安装、路由、编排插件。
+> A runtime extension suite for DeepSeek Harness — forge, install, route and orchestrate plugins the Forge way.
 
-在 DeepSeek Harness（DSH）用户层构建的一整套扩展：运行时注入器、任务感知思维模式路由、跨会话邮箱、Agent 团队、模型委派、Skill 管理器与插件管理 UI。**全部落在 `~/.dsh` 用户层，不 monkey-patch 任何 npm 包。**
+Topics: `dsh-plugin` `deepseek-harness` `dsh` `cordis` · 更多社区插件见 https://github.com/topics/dsh-plugin
 
-## 组件
+## 这是什么
 
-| 组件 | 位置 | 说明 |
-|---|---|---|
-| Host 插件（12 个） | `bundle/plugins/*.mjs` + `bundle/cordis.patch.yml` | 跨会话邮箱 / 模型委派 / 切模式 / 团队 / 指定模型子代理 / 运行时注入器 / skill 管理 / 模型路由策略 / 动态插件恢复 / 图片桥接 + 2 个 `@local` 客户端包 |
-| 动态插件（5 个） | `dynamic/auto-plugins.json` | 内联 host+client 代码：gitdock（默认禁用）、模式下拉框、模型选择器、子代理图片补丁、skill 管理器面板 |
-| Agent 预设 | `presets/router-standard/` | 任务感知思维模式路由：spec / react / weak 分类 + 首轮极简锚定（仅 deepseek 系列）+ 首个 tool/call 后放全量工具 |
-| 架构文档 | `docs/ARCHITECTURE.md` | 注入方式对比、分层规则、首轮锚定规则、cache 规则、npm 升级风险清单、验证记录 |
+dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-patch 任何 npm 包。核心四件套：
+
+| 组件 | 能力 |
+|---|---|
+| **插件市场 + 安装器** | 浏览 GitHub `dsh-plugin` topic 社区插件，一键安装（npm 包 / 动态清单 / preset / bundle 四种形态自动识别），注入器热加载 + 持久注册表 |
+| **任务感知思维模式路由**（router-standard preset） | 首条消息分类 spec（先计划）/ react（直接干）/ weak（模型自路由），首轮极简锚定 + 首个 tool/call 后放全量工具；锚定仅对 deepseek 系列生效 |
+| **Skill 管理器** | 统一管理全部技能：持久化增删启停、内容预览、内置 runtime 技能（跨会话邮箱 / 模型委派 / agent 团队）收敛为一处管理，设置页面板 + 模型工具双通道 |
+| **插件管理面板** | 实时发现宿主/注入/官方三类 loader 条目 + 动态插件运行/停止/删除，搜索 + 分区导航 |
+
+协作与编排层（12 个 host 插件）：
+
+- `mailbridge` — 跨会话邮箱：session_list / session_read / session_send / mailbox_check，离线消息持久排队、重启后自动投递
+- `teamhub` — Claude-Code 风格 agent 团队：captain + 成员子代理 + 依赖排序任务板 + 成员间直连消息
+- `llmrouter` — 多厂商模型委派：model_list / model_call，一次任务丢给任意 provider/model
+- `modelroute` — 子代理模型继承策略（永不静默升级到更贵 tier）+ 模型系列 taxonomy + plan 计费路由
+- `modeswitch` / `modsub` — 会话中途切 preset；指定模型 spawn 子代理
+- `injector` — BepInEx 式运行时注入：symlink + loader.create + 持久注册表，重启自动恢复
+- `dynboot` / `dynrestore` — auto-plugins.json 动态插件重启恢复 + 页面刷新重挂客户端
+- `imgsub-bridge` — 子代理图片消息转附件引用
+
+动态插件（`dynamic/auto-plugins.json`，内联 host+client 代码）：模式下拉框、模型+等级选择器、子代理图片补丁、技能管理面板、插件市场面板。
+
+## 为什么叫 forge
+
+DSH 的插件生态和 Minecraft 的 mod 生态很像：一个稳定的宿主（Harness），海量第三方扩展（插件），以及把这一切管理起来的装载层。Forge 就是那层——注入（装载）、路由（兼容）、市场（分发）、锻造（创作）。
 
 ## 安装
 
-> 目标环境：`$DSH_HOME`（默认 `~/.dsh`），profile 名 `web`。
-
-### 方式 A：一键复制（推荐）
-
 ```sh
-git clone https://github.com/<you>/dsh-suite.git
-cd dsh-suite
-node scripts/install.mjs          # 复制到 $DSH_HOME，自动备份，幂等
-# 重启 DSH（dsh web）后生效
+git clone https://github.com/alex04130/dsh-forge.git
+cd dsh-forge
+node scripts/install.mjs     # 复制到 $DSH_HOME，自动备份、幂等
+# 重启 DSH（dsh web），新建会话选择 Router Standard (experimental) preset
 ```
 
-install.mjs 会：
-
-1. 把 `bundle/plugins/*.mjs` 复制到 `$DSH_HOME/profiles/web/plugins/`；
-2. 把 `bundle/packages/{dsh-plugmgr,dsh-dynrestore}` 复制到 `$DSH_HOME/profiles/web/packages/` 并写入 `pnpm-workspace.yaml` 所需的 `@local/*` symlink；
-3. 把 `bundle/cordis.patch.yml` 合并进 `$DSH_HOME/profiles/web/cordis.patch.yml`（只插一次，用 `# dsh-suite:start/end` 标记包裹）；
-4. 把 `dynamic/auto-plugins.json` 的条目合并进 `$DSH_HOME/auto-plugins.json`（按 `idPrefix` 去重）；
-5. 把 `presets/router-standard/` 复制到 `$DSH_HOME/.agent-presets/router-standard/`。
-
-### 方式 B：手动
-
-对照上面的目录结构手动复制；`bundle/cordis.patch.yml` 与 `dynamic/auto-plugins.json` 需自行合并。
-
-### 方式 C：npm 包形态（bundle）
-
-`bundle/` 目录是一个可发布的 dsh bundle 包：
-
-```sh
-dsh plugin --profile web add <path-to-dsh-suite>/bundle
-```
-
-bundle 的 `dsh.bundle.patch` 指向其 `cordis.patch.yml`。插件行的 `./plugins/*.mjs` 相对路径在 profile 层解析；若以 npm 包安装，请把 `name` 改为包内子路径（如 `@dsh-suite/host/plugins/mailbridge.mjs`，需在 package.json `exports` 声明 `./plugins/*`）。
-
-## 关键配置
-
-- `router-standard` 的锚定适用模型：`presets/router-standard/agent.cordis.yml` 里 `router-bootstrap` 的 `config.anchorModels`（正则或模型 id 数组，默认 `/^deepseek/i`）。**首轮锚定只应对 deepseek 系列生效**——它是 v4 过拟合/RL 对齐问题的缓解方案；其他模型系列直接获得完整工具面（详见 `docs/ARCHITECTURE.md` §3.3）。
-- 持久数据：skill 注册表 `$DSH_HOME/skillmanager/registry.json`；注入器注册表 `$DSH_HOME/injector/registry.json`；团队/邮箱在 `$DSH_HOME/storages/`。
-- 动态插件禁用：`dynamic/auto-plugins.json` 条目加 `"disabled": true`（`dynboot.mjs` 会跳过）。
+或手动对照 `bundle/`、`dynamic/`、`presets/` 目录复制；npm 包形态：`dsh plugin --profile web add <path>/bundle`。
 
 ## 验证
 
-```sh
-npm run check          # 全部 host/client 代码语法自检（vm Script wrapper）
+`npm run check`（全部 host/client 代码语法自检）。运行时验证：`dev_plugin_status`（注入器）、`skill_list`（技能）、`model_taxonomy`（路由）、`dev_router_status`（思维模式路由）。
+
+## 截图
+
+界面截图存放于 `docs/screenshots/`（技能管理面板 / 插件管理面板 / 侧栏）。
+
+> 截图二进制尚未入库：待运行时侧生成后同步进 `docs/screenshots/`，README 将以相对路径引用。
+
+## 目录
+
+```
+bundle/     host 插件（cordis.patch.yml + plugins/*.mjs + @local 客户端包，可发布 dsh bundle）
+dynamic/    动态插件清单（auto-plugins.json）
+presets/    router-standard agent 预设
+scripts/    install.mjs / check.mjs
+docs/       架构文档（注入方式对比、分层规则、锚定规则、cache 规则、npm 升级风险）
 ```
 
-运行时验证手段（模型工具）：`dev_plugin_status` / `dev_injected_list`（注入器）、`skill_list` / `skill_add`（技能）、`model_taxonomy` / `model_route_status`（路由）、`dev_router_status`（思维模式路由，非锚定模型显示 `router BYPASSED`）。
+## 架构文档
 
-## 归因与许可
+`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。
 
-MIT。本仓库包含/改编自以下 MIT 项目的代码与思路，详见 `NOTICE`：
+## 许可与归因
 
-- [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)（yjh051108，MIT）
-- [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（xiaobright，MIT）
-- [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite)（yjh051108，MIT）
+MIT。改编自 [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)、[dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)、[dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite)（均 MIT），详见 NOTICE。
+
+> 历史：本项目原名 **dsh-suite**，2026-08 更名为 **dsh-forge**；`scripts/install.mjs` 的 cordis 合并标记仍保留旧拼写（`# dsh-suite:start/end`）以保证对已安装 profile 的幂等合并。
