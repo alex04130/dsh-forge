@@ -269,9 +269,10 @@ export default {
               if (delivered) {
                 return jsonText({ ok: true, delivered: 'woken', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName, agentOptions: agentOptions ?? null })
               }
-            } else {
-              return jsonText({ ok: false, error: 'session resumed but did not register; message not delivered', targetSessionId: targetId })
             }
+            // resume succeeded but the agent did not register: fall through to
+            // the durable queue below instead of losing the message (P0-2 fix —
+            // every path must end in live delivery OR the persistent queue).
           } catch (error) {
             return jsonText({ ok: false, error: 'wake failed: ' + errText(error), targetSessionId: targetId })
           }

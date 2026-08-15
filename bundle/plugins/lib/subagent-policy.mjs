@@ -125,40 +125,44 @@ export function collectModelEscalations(parentModel, childModel) {
 // prompt assembly (first agent/pre-step, prepend) and pins its reasoning
 // effort on every model request. Shared by spawn_model_subagent and
 // team_add_member so both delegation surfaces behave identically.
+//
+// Timing contract: `startContinuable` dispatches `agent/created` SYNCHRONOUSLY
+// before it resolves, so a map written after the await is always too late.
+// Callers therefore PREPARE the options before starting the spawn; the
+// agent/created listener consumes the pending slot and attaches the
+// pre-step/request hooks while the child is still unpublished.
 export function installChildPolicy(ctx, presets) {
   const agents = ctx.get('agents')
   const modeByChild = new Map()
   const effortByChild = new Map()
+  // Staged options keyed by the PARENT session id (FIFO per parent): written
+  // before startContinuable, consumed by the synchronously-dispatched
+  // agent/created. Keying by parent keeps concurrent spawns from different
+  // parents from stealing each other's options.
+  const stagedByParent = new Map()
   const disposers = new Map()
   const preStepDisposers = new Map()
 
-  ctx.on('agent/created', ({ agent }) => {
-    if (agent === undefined || agent.ctx === undefined) return
-    const sid = agent.session?.id
-    if (sid === undefined) return
-
-    const modeId = modeByChild.get(sid)
-    if (modeId !== undefined && presets !== undefined) {
-      modeByChild.delete(sid)
-      try {
-        const preStepOff = agent.ctx.on('agent/pre-step', async (_payload, next) => {
-          try { preStepOff() } catch (error) { /* best-effort */ }
-          try {
-            const preset = await presets.recompose(agent.ctx, modeId)
-            try { agent.session.append('agent-preset/selected', { agentPreset: preset.id }) } catch (error) { /* durable record is best-effort */ }
-          } catch (error) {
-            console.error('[subagent-policy] child preset recompose failed for', sid, ':', String(error && error.message ? error.message : error))
-          }
-          return next()
-        }, { prepend: true })
-        preStepDisposers.set(agent.id, preStepOff)
-      } catch (error) {
-        console.error('[subagent-policy] failed to install preset re-composition for', sid, ':', String(error && error.message ? error.message : error))
-      }
+  function attachMode(agent, modeId) {
+    if (presets === undefined) return
+    try {
+      const preStepOff = agent.ctx.on('agent/pre-step', async (_payload, next) => {
+        try { preStepOff() } catch (error) { /* best-effort */ }
+        try {
+          const preset = await presets.recompose(agent.ctx, modeId)
+          try { agent.session.append('agent-preset/selected', { agentPreset: preset.id }) } catch (error) { /* durable record is best-effort */ }
+        } catch (error) {
+          console.error('[subagent-policy] child preset recompose failed for', agent.id, ':', String(error && error.message ? error.message : error))
+        }
+        return next()
+      }, { prepend: true })
+      preStepDisposers.set(agent.id, preStepOff)
+    } catch (error) {
+      console.error('[subagent-policy] failed to install preset re-composition for', agent.id, ':', String(error && error.message ? error.message : error))
     }
+  }
 
-    const effort = effortByChild.get(sid)
-    if (effort !== undefined) effortByChild.delete(sid)
+  function attachEffort(agent, effort) {
     try {
       const off = agent.ctx.on('agent/request', async (_payload, next) => {
         const resolved = await next()
@@ -171,8 +175,38 @@ export function installChildPolicy(ctx, presets) {
       }, { prepend: true })
       disposers.set(agent.id, off)
     } catch (error) {
-      console.error('[subagent-policy] failed to install effort injection for', sid, ':', String(error && error.message ? error.message : error))
+      console.error('[subagent-policy] failed to install effort injection for', agent.id, ':', String(error && error.message ? error.message : error))
     }
+  }
+
+  ctx.on('agent/created', ({ agent }) => {
+    if (agent === undefined || agent.ctx === undefined) return
+    const sid = agent.session?.id
+
+    // 1) consume the staged options prepared before spawn (FIFO per parent)
+    let modeId = undefined
+    let effort = undefined
+    let parentId = undefined
+    try { parentId = agent.session !== undefined && agent.session.header !== undefined ? agent.session.header.parentSession : undefined } catch (error) { parentId = undefined }
+    if (typeof parentId === 'string' && parentId.length > 0) {
+      const q = stagedByParent.get(parentId)
+      if (q !== undefined && q.length > 0) {
+        const staged = q.shift()
+        if (q.length === 0) stagedByParent.delete(parentId)
+        modeId = staged.mode
+        effort = staged.effort
+      }
+    }
+    // 2) fall back to the by-child maps (register-after-spawn compat path)
+    if (sid !== undefined) {
+      if (modeId === undefined) modeId = modeByChild.get(sid)
+      if (effort === undefined) effort = effortByChild.get(sid)
+      if (modeId !== undefined) modeByChild.delete(sid)
+      if (effort !== undefined) effortByChild.delete(sid)
+    }
+
+    if (modeId !== undefined) attachMode(agent, modeId)
+    if (effort !== undefined) attachEffort(agent, effort)
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
@@ -189,9 +223,35 @@ export function installChildPolicy(ctx, presets) {
   })
 
   return {
+    /** Stage options for the next child of one parent; call BEFORE startContinuable. */
+    prepare(options = {}) {
+      if (options.mode === undefined && options.effort === undefined) return { cancel() {} }
+      const parentId = String(options.parentId ?? '')
+      if (parentId === '') return { cancel() {} }
+      const entry = { mode: options.mode, effort: options.effort }
+      const q = stagedByParent.get(parentId)
+      if (q === undefined) stagedByParent.set(parentId, [entry])
+      else q.push(entry)
+      return {
+        cancel() {
+          const list = stagedByParent.get(parentId)
+          if (list === undefined) return
+          const idx = list.indexOf(entry)
+          if (idx >= 0) list.splice(idx, 1)
+          if (list.length === 0) stagedByParent.delete(parentId)
+        },
+      }
+    },
+    /** Compat entry: apply to an already-created child, or stage by id. */
     register(childId, options = {}) {
-      if (options.mode !== undefined) modeByChild.set(childId, options.mode)
-      if (options.effort !== undefined) effortByChild.set(childId, options.effort)
+      const agent = typeof childId === 'string' && childId.length > 0 ? agents.get(childId) : undefined
+      if (agent !== undefined && agent.ctx !== undefined) {
+        if (options.mode !== undefined) attachMode(agent, options.mode)
+        if (options.effort !== undefined) attachEffort(agent, options.effort)
+      } else {
+        if (options.mode !== undefined) modeByChild.set(childId, options.mode)
+        if (options.effort !== undefined) effortByChild.set(childId, options.effort)
+      }
     },
     liveRoute(parent) {
       const header = parent.session?.requestHeader?.()
