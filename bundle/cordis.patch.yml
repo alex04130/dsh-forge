@@ -1,0 +1,53 @@
+# User patch: cross-session mailbox + multi-provider model delegation +
+# mid-session preset switching (authored 2026-08-13 by the cordis session).
+# Rows resolve ./plugins/*.mjs against this profile directory; they register
+# global tools so every session on every preset can call them, and the
+# mailbox listener is untagged so it serves every session-start in the process.
+#
+# dynrestore is a local dual-face package: its client half re-mounts the
+# client halves of RUNNING dynamic plugins on page boot and connection reset,
+# so a page refresh no longer requires re-running plugins by hand.
+- insert:
+    - id: mailbridge
+      name: ./plugins/mailbridge.mjs
+
+    - id: llmrouter
+      name: ./plugins/llmrouter.mjs
+
+    - id: modeswitch
+      name: ./plugins/modeswitch.mjs
+
+    - id: teamhub
+      name: ./plugins/teamhub.mjs
+
+    - id: modsub
+      name: ./plugins/modsub.mjs
+
+    # Runtime injection layer: inject local plugin packages into a running
+    # profile (symlink into profile node_modules + ctx.loader.create), with a
+    # durable registry (~/.dsh/injector/registry.json) that re-injects on boot.
+    - id: injector
+      name: ./plugins/injector.mjs
+
+    # Durable runtime skill management (persistent runtime skills + enable /
+    # disable / remove) on top of ctx.skills.
+    - id: skillmanager
+      name: ./plugins/skillmanager.mjs
+
+    # Subagent model-inheritance policy + model-series taxonomy + plan-aware
+    # provider routing (never upgrade a child to a more expensive tier; route a
+    # plan user's requests to the plan provider instead of their own key).
+    - id: modelroute
+      name: ./plugins/modelroute.mjs
+
+    - id: dynboot
+      name: ./plugins/dynboot.mjs
+
+    - id: imgsubbridge
+      name: ./plugins/imgsub-bridge.mjs
+
+    - id: dynrestore
+      name: '@local/dsh-dynrestore'
+
+    - id: plugmgr
+      name: '@local/dsh-plugmgr'

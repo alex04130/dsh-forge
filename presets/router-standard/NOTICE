@@ -1,0 +1,19 @@
+NOTICE
+
+This preset (agent.cordis.yml, router-core.mjs, router-bootstrap.mjs) is an
+ADAPTATION of, and contains code derived from:
+
+  - dsh-router-standard (yjh051108/dsh-router-standard), MIT License,
+    copyright its authors. The routing core (persona bands, keyword
+    classification, first-turn tool bootstrap, near-field guidance) is ported
+    from its `preset/router-core.mjs` and `preset/router-bootstrap.mjs`.
+
+  - The "first-turn anchoring" mechanism it ports originates from
+    dsh-anchored-standard (xiaobright/dsh-anchored-standard), MIT License.
+
+Our additions over the upstream: the workspace-instructions baseline
+(AGENTS.md / CLAUDE.md) is suppressed on the first turn and restored after the
+first durable tool call, and the bandOf/bandFor import is corrected.
+
+Both upstream projects are MIT licensed; their respective license texts and
+copyright notices remain with the original repositories.
