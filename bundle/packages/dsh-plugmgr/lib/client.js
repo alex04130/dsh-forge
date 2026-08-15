@@ -11,7 +11,6 @@ window.__ModuleLoader__.load({
       '[class$="_footerActions"] { flex-direction: column; align-items: stretch; gap: 4px; }',
       '[class$="_footerActions"] > [class$="_layer"] { margin: 0; min-height: 49px; }',
       '[class$="_footerActions"] button { color: var(--dsw-alias-label-primary, inherit); }',
-      '[class$="_footerActions"] [class$="_badgeCount"] { background: rgba(128,128,128,.14); color: var(--dsw-alias-label-primary, inherit); border-radius: 999px; padding: 0 8px; min-width: 20px; text-align: center; }',
       '[class$="_footerActions"] button { transition: background .12s ease; border-radius: 8px !important; }',
       '[class$="_footerActions"] button:hover { background: rgba(0,0,0,.05) !important; }',
       '[class*="collapsed"] [class$="_footerActions"] { align-items: center; }',
