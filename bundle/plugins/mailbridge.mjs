@@ -190,10 +190,11 @@ export default {
       })
 
     registerTool('session_send',
-      'Send a message to another session in this DSH process. A live target receives it in its inbox immediately and wakes; otherwise the message is queued durably and delivered the next time that session starts. The recipient sees the text prefixed with `[cross-session message from <session name> (<sessionId>)]`. See the `cross-session-mailbox` skill for the full workflow.',
+      'Send a message to another session in this DSH process. A live target receives it in its inbox immediately and wakes; otherwise the message is queued durably and delivered the next time that session starts. With `wake: true` an offline target is COLD-RESUMED right now (its persisted log is loaded, the session restarts and processes the message immediately) instead of waiting for its next manual start — use it to force a sleeping session to work now; it consumes model turns on the target. The recipient sees the text prefixed with `[cross-session message from <session name> (<sessionId>)]`. See the `cross-session-mailbox` skill for the full workflow.',
       {
         targetSessionId: { type: 'string', required: true, description: 'Target session id from session_list.' },
         text: { type: 'string', required: true, description: 'Message body for the target session.' },
+        wake: { type: 'boolean', description: 'Force-wake an offline target: cold-resume it from its persisted log and deliver immediately (default false = durable queue). Consumes model turns on the target session.' },
       },
       async (args, exec) => {
         const targetId = String(args.targetSessionId)
@@ -222,6 +223,38 @@ export default {
             else target.followup(message)
             return jsonText({ ok: true, delivered: 'live', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName })
           } catch (error) { /* fall through to the durable queue */ }
+        }
+        if (args.wake === true && typeof agents.resume === 'function') {
+          try {
+            // Reuse the session's last logged route so the waking turn bills
+            // the same provider/model instead of the global default.
+            let agentOptions
+            try {
+              const inspection = await sessionPersistence.inspect(targetId)
+              const events = Array.isArray(inspection.events) ? inspection.events : []
+              for (let i = events.length - 1; i >= 0; i -= 1) {
+                const event = events[i]
+                const header = event?.data?.header
+                const cfg = header?.config
+                if (event !== null && typeof event === 'object' && event.type === 'request/header' && cfg !== null && typeof cfg === 'object' && typeof cfg.provider === 'string' && typeof cfg.model === 'string') {
+                  agentOptions = { provider: cfg.provider, model: cfg.model }
+                  break
+                }
+              }
+            } catch (error) { /* resume with defaults */ }
+            await agents.resume({ resumeSessionId: targetId, ...(agentOptions !== undefined ? { agentOptions } : {}) })
+            const resumed = agents.get(targetId)
+            if (resumed !== undefined) {
+              try {
+                if (typeof resumed.status === 'string' && resumed.status === 'running') resumed.steer(message)
+                else resumed.followup(message)
+              } catch (error) { /* message still queued below if delivery fails */ }
+              return jsonText({ ok: true, delivered: 'woken', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName, agentOptions: agentOptions ?? null })
+            }
+            return jsonText({ ok: false, error: 'session resumed but did not register; message not delivered', targetSessionId: targetId })
+          } catch (error) {
+            return jsonText({ ok: false, error: 'wake failed: ' + errText(error), targetSessionId: targetId })
+          }
         }
         try {
           const ids = await listSessionIds()
