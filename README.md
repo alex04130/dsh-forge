@@ -79,6 +79,15 @@ token 由 DSH 进程环境变量 `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_TOKEN`
 
 `npm run check`（全部 host/client 代码语法自检）。运行时验证：`dev_plugin_status`（注入器）、`skill_list`（技能）、`model_taxonomy`（路由）、`dev_router_status`（思维模式路由）。
 
+## 平台支持
+
+Windows / macOS / Linux 全平台可用：
+
+- **路径运行时派生**：全部插件用 `process.env.DSH_HOME || join(os.homedir(), '.dsh')` 解析 DSH 家目录，无硬编码绝对路径。
+- **注入与安装**：`scripts/install.mjs` 与注入器均带 win32 junction 回退（无符号链接权限时自动降级）。
+- **动态插件 shell 操作**（插件市场 / session_find 等）全部改写为 `node -e` 跨平台实现（bash 与 pwsh 双壳安全引用），不依赖 POSIX 命令。
+- 发布脚本 `scripts/publish-client-packages.sh` 为维护者本机专用（POSIX），不影响使用端。
+
 ## 工具定义
 
 本套件注册的全部模型工具，按插件分组：
