@@ -1,0 +1,36 @@
+NOTICE
+
+This repository (dsh-forge, formerly dsh-suite) contains code and ideas derived from the following
+projects, all released under the MIT License. Their copyright notices remain
+with the original authors and repositories.
+
+1. dsh-router-standard (yjh051108/dsh-router-standard), MIT License.
+   The reasoning-mode routing core in presets/router-standard/
+   (router-core.mjs, router-bootstrap.mjs) is ported from its
+   preset/router-core.mjs and preset/router-bootstrap.mjs: persona bands
+   (spec / mixed / react / weak), keyword task classification, first-turn
+   tool bootstrap, and near-field guidance.
+
+2. dsh-anchored-standard (xiaobright/dsh-anchored-standard), MIT License.
+   The "first-turn anchoring" mechanism — the minimal first-turn prompt
+   (persona + plan boundary only) plus the suppression of the
+   workspace-instructions baseline and skill catalog until the first durable
+   tool call — originates from this project.
+
+3. dsh-routing-suite (yjh051108/dsh-routing-suite), MIT License.
+   The BepInEx-style runtime injection layer concept (bundle/plugins/injector.mjs:
+   symlink into the profile node_modules + ctx.loader.create + a durable
+   registry that re-injects on boot) follows its injector design.
+
+Our additions over the upstreams include (non-exhaustive):
+- workspace-instructions baseline (AGENTS.md / CLAUDE.md) suppression on the
+  first turn and restoration after the first durable tool call;
+- the bandOf/bandFor import correction;
+- the sessionMode() inbox-splice classification fix (first-turn messages are
+  only durable as agent/inbox/spliced before the prompt is assembled);
+- the anchor-applicability gate (first-turn anchoring applies to the
+  deepseek model series only — see docs/ARCHITECTURE.md §3.3);
+- the cross-session mailbox, team orchestration, model delegation, preset
+  switching, skill manager, model-route policy, and plugin-manager UI.
+
+All original MIT license texts remain with the upstream repositories.

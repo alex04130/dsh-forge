@@ -95,6 +95,11 @@ Windows / macOS / Linux 全平台可用：
 - **动态插件 shell 操作**（插件市场 / session_find 等）全部改写为 `node -e` 跨平台实现（bash 与 pwsh 双壳安全引用），不依赖 POSIX 命令。
 - 发布脚本 `scripts/publish-client-packages.sh` 为维护者本机专用（POSIX），不影响使用端。
 
+## 已知限制
+
+- **teamhub**：队长代认领的任务，成员本人无法 update（assignee 记录 memberId、鉴权用 sessionId）；`team_create` / `team_add_member` 的审批等待会串行阻塞其他 `team_*` 调用（P1 顺延项）。
+- **市场安装的插件以宿主进程权限执行**（与 `dsh plugin add` 同样无沙箱隔离）——只安装审查过来源的仓库；面板内已有警示横幅。
+
 ## 工具定义
 
 本套件注册的全部模型工具，按插件分组：

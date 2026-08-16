@@ -4,10 +4,11 @@
 import { mkdir, copyFile, readFile, writeFile, rename, symlink, rm, access } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
+import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const DSH_HOME = process.env.DSH_HOME || join(process.env.HOME || '', '.dsh')
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const PROFILE = 'web'
 // Marker values keep the old "dsh-suite" spelling on purpose: profiles
 // installed before the rename already contain blocks wrapped by these
