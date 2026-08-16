@@ -1,9 +1,10 @@
 // description: 跨会话消息桥：session_send / session_read / mailbox_check，让同一进程内的会话互相收发消息（带 begin/end 标记）。
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
-const DSH_HOME = process.env.DSH_HOME || '/home/alex/.dsh'
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const SESSIONS_ROOT = DSH_HOME + '/sessions'
 const PROJCACHE_PATH = DSH_HOME + '/storages/session_projcache.json'
 
@@ -218,11 +219,11 @@ export default {
       })
 
     registerTool('session_send',
-      '向本 DSH 进程中的另一会话发送消息。在线目标会立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。`wake: true` 时离线目标立即冷启动（加载其已持久化日志，会话重启并立刻处理该消息），而不是等它下次手动启动——用于强制睡眠中的会话现在就干活；会消耗目标会话的模型回合。接收方看到的文本带 `[cross-session message from <session name> (<sessionId>)]` 前缀。完整工作流见 `cross-session-mailbox` 技能。',
+      '向本 DSH 进程中的另一会话发送消息。在线目标会立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。`wake: true` 时离线目标立即冷启动（加载其已持久化日志，会话重启并立刻处理该消息），而不是等它下次手动启动——用于强制睡眠中的会话现在就干活；会消耗目标会话的模型回合。wake 仅主会话可用（子代理被拒），同一目标 60 秒内最多 3 次。接收方看到的文本带 `[cross-session message from <session name> (<sessionId>)]` 前缀。完整工作流见 `cross-session-mailbox` 技能。',
       {
         targetSessionId: { type: 'string', required: true, description: '目标会话 id（来自 session_list）。' },
         text: { type: 'string', required: true, description: '目标会话的消息正文。' },
-        wake: { type: 'boolean', description: '是否强制唤醒离线目标：从其已持久化日志冷启动并立即送达（默认 false = 持久排队）。会消耗目标会话的模型回合。' },
+        wake: { type: 'boolean', description: '是否强制唤醒离线目标：从其已持久化日志冷启动并立即送达（默认 false = 持久排队）。会消耗目标会话的模型回合；仅主会话可用，同一目标 60 秒内最多 3 次。' },
       },
       async (args, exec) => {
         const targetId = String(args.targetSessionId)

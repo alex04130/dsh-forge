@@ -61,9 +61,9 @@
         transport: stdio
         serverName: github
         command: node
-        args: ['/home/alex/.dsh/mcp/github-server/node_modules/@modelcontextprotocol/server-github/dist/index.js']
+        args: [!!js "(process.env.DSH_HOME || process.env.HOME + '/.dsh') + '/mcp/github-server/node_modules/@modelcontextprotocol/server-github/dist/index.js'"]
         env:
           GITHUB_PERSONAL_ACCESS_TOKEN: !!js process.env.GITHUB_PERSONAL_ACCESS_TOKEN || process.env.GITHUB_TOKEN || ''
-        cwd: /home/alex/.dsh
+        cwd: !!js "process.env.DSH_HOME || process.env.HOME + '/.dsh'"
         toolCallTimeoutMs: 60000
         failOnStartupError: false

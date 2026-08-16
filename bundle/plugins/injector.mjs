@@ -1,6 +1,7 @@
 // description: 运行时插件注入（dev_inject_plugin）：把本地插件包注入运行中的 profile，注册表在重启后自动恢复。
 import { mkdir, symlink, readFile, writeFile, rename, rm, lstat } from 'node:fs/promises'
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path'
+import { homedir } from 'node:os'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 // dsh-injector: runtime plugin injection layer (BepInEx-style).
@@ -28,7 +29,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 //     PACKAGE's own node_modules (the loader does not map it to the checkout),
 //     so link those deps into the package dir before injecting.
 
-const DSH_HOME = process.env.DSH_HOME || '/home/alex/.dsh'
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const REGISTRY_PATH = DSH_HOME + '/injector/registry.json'
 const NODE_MODULES = DSH_HOME + '/profiles/node_modules'
 

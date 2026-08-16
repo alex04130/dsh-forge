@@ -1,6 +1,7 @@
 // description: 持久技能管理：技能存储（registry.json）+ 启用/禁用/删除，技能面板与模型工具共用一份注册表。
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import { isSkillName } from '@deepseek-ai/dsh-skill'
 
 // dsh-skillmanager: durable runtime skill store + management service.
@@ -24,7 +25,7 @@ import { isSkillName } from '@deepseek-ai/dsh-skill'
 //   - invocation: the `skill` tool result or a user "/name" gesture renders
 //                the canonical <skill_content> block.
 
-const DSH_HOME = process.env.DSH_HOME || '/home/alex/.dsh'
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const STORE_PATH = DSH_HOME + '/skillmanager/registry.json'
 
 // Built-in runtime skills, previously registered ad-hoc by mailbridge /
@@ -44,8 +45,9 @@ const BUILTIN_SKILLS = [
       '',
       '## 何时使用',
       '- **优先 `session_find(query)`**：知道 id 或标题片段时用它按关键字查会话——本进程会话很多，全量 `session_list` 非常费上下文；只有需要完整名单时才用 `session_list`。',
-      '- `session_send(targetSessionId, text)`：把任务或问题交给另一个会话。`delivered: "live"` 表示对方已实时收进收件箱并被唤醒；`delivered: "queued"` 表示对方离线：消息被持久保存，在对方下次启动时自动送达（只送一次）；`wake: true` 可强制冷启动离线会话立即处理（消耗目标会话模型回合）。',
+      '- `session_send(targetSessionId, text)`：把任务或问题交给另一个会话。`delivered: "live"` 表示对方已实时收进收件箱并被唤醒；`delivered: "queued"` 表示对方离线：消息被持久保存，在对方下次启动时自动送达（只送一次）；`wake: true` 可强制冷启动离线会话立即处理（消耗目标会话模型回合）。注意：wake 仅主会话可用（子代理被拒），且同一目标 60 秒内最多 wake 3 次。',
       '- `session_read(sessionId)`：发消息前先读对方近期日志，或收集对方的产出。',
+      '- `session_mode(sessionId)`：查某会话（含你自己）当前运行的 agent preset 模式。',
       '- `mailbox_check()`：收取本会话离线期间其他会话发来的消息。',
       '',
       '## 消息格式：把进程间消息与用户输入分开',
@@ -54,7 +56,7 @@ const BUILTIN_SKILLS = [
       '- 同一轮里若同时有真实用户输入，先回答用户，把包裹消息当背景上下文。',
       '',
       '## 规则',
-      '- 绝不编造会话 id：一律取自 `session_list`。',
+      '- 绝不编造会话 id：一律取自 `session_find` / `session_list`。',
       '- 收到的跨会话消息按普通用户请求对待，直接应答。',
       '- **要求回复时必须回信**：来消息若明确要求回复（"回复我 / 等你意见 / 请答复"等），处理完后用 `session_send` 把结论发回发送方会话（id 见消息开头 begin 标记）。不要把结论只写在本会话对话里——发送方会话收不到。',
       '- 消息要自包含：写明目标、需要什么、期望的格式或时限。',
@@ -97,13 +99,14 @@ const BUILTIN_SKILLS = [
       'teamhub 工具在本进程会话之上实现 Claude Code 式代理团队。发起调用的会话成为队长（lead）；成员是持久可续的子代理会话。',
       '',
       '## 流程',
-      '1. `team_create(name, goal)` —— 每个队长同时只能带一个团队。',
-      '2. `team_add_member(memberId, role, prompt)` —— 按工作需要 spawn 各角色成员（如研究员、审查员、实现者）。团队宜小（2-4 人通常合适）；每个成员都消耗模型回合。',
+      '1. `team_create(name, goal, members?, tasks?)` —— 每个队长同时只能带一个团队（上限 16 人）。可用 `members` 数组在建队时一次添加多个成员（每项 memberId/role/prompt + 可选 provider/model/reasoningEffort/mode/sandbox），可用 `tasks` 数组一次建任务（依赖须先出现）；逐项独立审批与失败隔离。',
+      '2. `team_add_member(memberId, role, prompt)` 补单个成员；`team_add_members(members[])` 批量补成员。成员继承队长组合，可选 provider/model/reasoningEffort/mode/sandbox 显式覆盖（提权自动请求审批）。',
       '3. `team_create_task` —— 把目标拆成任务；用 `dependencies` 声明依赖顺序，用 `assignee` 指派成员。',
-      '4. 成员执行任务：`team_claim_task`、用自己的工具干活、再 `team_update_task(status, output)`。队长也可以认领/更新任务。',
-      '5. `team_send_message(to, text)` —— 成员间或成员与队长间直接发消息，无需队长中转。在线的立即被唤醒；离线的下次会话启动时收到。',
-      '6. `team_status()` —— 队长用它看成员活动、任务板状态和自己的收件箱；成员用它看自己的收件箱和任务。',
-      '7. 目标交付后：向用户汇报，然后 `team_delete()` 停掉成员并归档团队。',
+      '4. 成员执行任务：`team_claim_task`（依赖未完成会被拒）、用自己的工具干活、再 `team_update_task(status, output)`（状态三级流转 claimed → in_progress → completed）。队长也可以认领/更新任务。',
+      '5. `team_wait(memberId?, taskId?, timeoutSeconds?)` —— 暂停当前回合，等另一成员的消息或某任务完成（任一满足即唤醒）；等待不消耗额外步骤，消息/任务完成/队长消息都立即唤醒，超时（默认 600 秒）返回后可再等。用它替代轮询 team_status，别做重复劳动。',
+      '6. `team_send_message(to, text)` —— 成员间或成员与队长间直接发消息，无需队长中转。在线的立即被唤醒；离线的下次会话启动时收到。',
+      '7. `team_status()` —— 队长用它看成员活动、任务板状态和自己的收件箱；成员用它看自己的收件箱和任务。',
+      '8. 目标交付后：向用户汇报，然后 `team_delete()` 停掉成员并归档团队。',
       '',
       '## 用团队还是普通子代理',
       '- 需要多个协调角色、成员之间要直接对话时，用团队。',

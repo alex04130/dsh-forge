@@ -1,6 +1,6 @@
 {
   "name": "@dsh-forge/bundle",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "DSH extension suite host bundle: cross-session mailbox, agent teams, model delegation & routing policy, runtime injector, skill manager, dynamic-plugin boot, and the plugin/skill manager client packages.",
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,6 @@
   ],
   "exports": {
     "./cordis.npm.yml": "./cordis.npm.yml",
-    "./cordis.patch.yml": "./cordis.patch.yml",
     "./plugins/*": "./plugins/*",
     "./package.json": "./package.json"
   },
