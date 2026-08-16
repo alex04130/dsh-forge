@@ -11,8 +11,8 @@
     "check": "node scripts/check.mjs"
   },
   "dsh": {
-    "profile": {
-      "bundles": []
+    "bundle": {
+      "patch": "./bundle/cordis.patch.yml"
     }
   }
 }
