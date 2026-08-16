@@ -1,0 +1,53 @@
+# npm bundle variant of cordis.patch.yml (the repository's production
+# cordis.patch.yml uses ./plugins/*.mjs relative paths for the file-copy /
+# install.mjs layout; this variant resolves everything through package
+# specifiers so a profile booted from the npm registry can import the rows).
+# Published inside @dsh-forge/bundle and referenced by its dsh.bundle.patch.
+#
+# The mcp-github row from cordis.patch.yml is intentionally absent here: it
+# hard-codes a machine-local path + env token. See the README's
+# "可选：GitHub MCP 工具" section for the manual setup.
+- insert:
+    - id: mailbridge
+      name: '@dsh-forge/bundle/plugins/mailbridge.mjs'
+
+    - id: llmrouter
+      name: '@dsh-forge/bundle/plugins/llmrouter.mjs'
+
+    - id: modeswitch
+      name: '@dsh-forge/bundle/plugins/modeswitch.mjs'
+
+    - id: teamhub
+      name: '@dsh-forge/bundle/plugins/teamhub.mjs'
+
+    - id: modsub
+      name: '@dsh-forge/bundle/plugins/modsub.mjs'
+
+    # Runtime injection layer: inject local plugin packages into a running
+    # profile (symlink into profile node_modules + ctx.loader.create), with a
+    # durable registry (~/.dsh/injector/registry.json) that re-injects on boot.
+    - id: injector
+      name: '@dsh-forge/bundle/plugins/injector.mjs'
+
+    # Durable runtime skill management (persistent runtime skills + enable /
+    # disable / remove) on top of ctx.skills.
+    - id: skillmanager
+      name: '@dsh-forge/bundle/plugins/skillmanager.mjs'
+
+    # Subagent model-inheritance policy + model-series taxonomy + plan-aware
+    # provider routing (never upgrade a child to a more expensive tier; route a
+    # plan user's requests to the plan provider instead of their own key).
+    - id: modelroute
+      name: '@dsh-forge/bundle/plugins/modelroute.mjs'
+
+    - id: dynboot
+      name: '@dsh-forge/bundle/plugins/dynboot.mjs'
+
+    - id: imgsubbridge
+      name: '@dsh-forge/bundle/plugins/imgsub-bridge.mjs'
+
+    - id: dynrestore
+      name: '@dsh-forge/dsh-dynrestore'
+
+    - id: plugmgr
+      name: '@dsh-forge/dsh-plugmgr'
