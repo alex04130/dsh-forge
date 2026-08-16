@@ -4,9 +4,8 @@
 # specifiers so a profile booted from the npm registry can import the rows).
 # Published inside @dsh-forge/bundle and referenced by its dsh.bundle.patch.
 #
-# The mcp-github row from cordis.patch.yml is intentionally absent here: it
-# hard-codes a machine-local path + env token. See the README's
-# "可选：GitHub MCP 工具" section for the manual setup.
+# GitHub MCP（mcp__github__*）默认不集成；需要时按 README 的
+# "可选：GitHub MCP 工具（手动配置）" 一节自行添加。
 - insert:
     - id: mailbridge
       name: '@dsh-forge/bundle/plugins/mailbridge.mjs'

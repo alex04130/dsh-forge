@@ -51,19 +51,3 @@
 
     - id: plugmgr
       name: '@local/dsh-plugmgr'
-
-    # GitHub MCP server (stdio via npx). The token lives in the DSH process
-    # environment (GITHUB_TOKEN / GITHUB_PERSONAL_ACCESS_TOKEN), never in this
-    # file: !!js evaluates at load time.
-    - id: mcp-github
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        transport: stdio
-        serverName: github
-        command: node
-        args: [!!js "(process.env.DSH_HOME || process.env.HOME + '/.dsh') + '/mcp/github-server/node_modules/@modelcontextprotocol/server-github/dist/index.js'"]
-        env:
-          GITHUB_PERSONAL_ACCESS_TOKEN: !!js process.env.GITHUB_PERSONAL_ACCESS_TOKEN || process.env.GITHUB_TOKEN || ''
-        cwd: !!js "process.env.DSH_HOME || process.env.HOME + '/.dsh'"
-        toolCallTimeoutMs: 60000
-        failOnStartupError: false

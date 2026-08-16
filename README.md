@@ -63,15 +63,22 @@ node scripts/install.mjs     # 复制到 $DSH_HOME，自动备份、幂等
 
 或手动对照 `bundle/`、`dynamic/`、`presets/` 目录复制；本地路径形态：`dsh plugin --profile web add <path>/bundle`。
 
-### 可选：GitHub MCP 工具（mcp__github__*）
+### 可选：GitHub MCP 工具（mcp__github__*，默认不集成）
 
-`bundle/cordis.patch.yml` 内置 mcp-github 条目，依赖本地运行时目录 `~/.dsh/mcp/github-server/`
-（不进仓库）。安装（本机 npm 全局/缓存目录可能只读，故指定 `--cache /tmp/npm-cache`）：
+默认不集成（`bundle/cordis.patch.yml` 已不含 mcp-github 条目）。以下为手动可选配置，
+需自备 token：
+
+1. 本地安装 MCP server（依赖运行时目录 `~/.dsh/mcp/github-server/`，不进仓库；本机 npm
+   全局/缓存目录可能只读，故指定 `--cache /tmp/npm-cache`）：
 
 ```sh
 npm install --prefix ~/.dsh/mcp/github-server --cache /tmp/npm-cache \
   --no-bin-links --no-package-lock @modelcontextprotocol/server-github
 ```
+
+2. 在 profile 的 `cordis.patch.yml` 里手工追加 mcp-github 条目（stdio 走
+   `node ~/.dsh/mcp/github-server/node_modules/@modelcontextprotocol/server-github/dist/index.js`，
+   serverName=github，工具名 `mcp__github__*`）。
 
 token 由 DSH 进程环境变量 `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_TOKEN` 提供，配置文件不落密钥。
 
