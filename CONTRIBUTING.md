@@ -33,3 +33,9 @@
 
 - cordis.patch.yml 插件、preset .mjs、auto-plugins.json 的改动需重启 DSH 生效；动态插件热更新需 `dev_stop_dyn_plugin <prefix>` 停旧实例（dynboot define 是一次性快照）。
 - 侧栏 UI：禁止在 React 插槽里搬 DOM（insertBefore 会拖垮 sidebar slot）；用纯 CSS `[class$="_footerActions"] { flex-direction: column }`。
+
+## 运行时与仓库的有意差异（LOCAL-ONLY 块）
+
+- `profiles/web/cordis.patch.yml`（运行时）与 `bundle/cordis.patch.yml`（仓库）存在一条**有意为之**的差异：运行时文件末尾有 `LOCAL-ONLY personal integration` 注释块（mcp-github 行），是维护者本机的私人集成——**永远不要镜像进仓库**，也不要写进 bundle/cordis.npm.yml。
+- 同步该文件一律 diff 审查 + 排除 LOCAL-ONLY 块，禁止整文件 cp 覆盖。
+- 同理：injector registry（~/.dsh/injector/registry.json）与市场安装的个人插件（如 kimi webbridge）属本机个人状态，仓库必须保持零引用。
