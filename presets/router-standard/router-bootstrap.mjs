@@ -28,7 +28,6 @@
 
 import {
   applyPersona, bandFor, bandOf, coreFor, parseMode, personaFor, sessionMode, testinessFor, clamp01,
-  isComplexTask, extractText,
 } from './router-core.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -161,35 +160,6 @@ export function apply(ctx, config) {
       : decision.messages
     return { ...decision, messages }
   }, { prepend: true })
-
-  // ── near-field routing guidance for weak mode ─────────────────────────────
-  const GUIDE_WEAK =
-    '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply first, then commit and act.'
-  const GUIDE_DEEP =
-    '\nRouter: classify this task (build or fix) now, then adopt the matching style — build: direct production; fix: inspect-first. Think deeply about the architecture, edge cases, and integration points. Do not spend reasoning on the environment or tooling. Produce when your information is complete. End each reasoning block with a decision or an information need.'
-
-  ctx.on('session/event', (session, event) => {
-    if (event.type !== 'user/message') return
-    const data = event.data ?? {}
-    if (data.source?.kind !== 'user') return // only real user messages
-    const agent = ctx.get('agent')
-    const target = agent !== undefined && agent.session === session ? agent : [...agents.values()].find((a) => a.session === session)
-    if (target === undefined || target.inbox === undefined) return
-    if (!anchorApplies(target)) return // no near-field guidance for other series
-    const mode = modeFor(session)
-    if (bandOf(mode) !== 'weak') return // strong modes need no guidance
-    const text = extractText(data)
-    if (!text.trim()) return
-    const guide = isComplexTask(text) ? GUIDE_DEEP : GUIDE_WEAK
-    try {
-      target.inbox.append('next-step', {
-        id: `router-guide-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        role: 'user',
-        source: { kind: 'plugin', plugin: 'router-bootstrap' },
-        content: [{ type: 'text', text: guide }],
-      })
-    } catch { /* duplicate/ordering races: skip */ }
-  })
 
   // ── router visibility & tuning (agent self-optimization) ────────────────
   const registerTool = (tool) => {

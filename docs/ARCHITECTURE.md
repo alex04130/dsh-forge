@@ -61,7 +61,7 @@ preset 的 `.mjs` 相对行从**用户主目录**解析裸 specifier，所以 `@
 - `personaFor`：spec=`"You are a helpful software engineer assistant."`；react=hands-on doer；weak=按模型选 WEAK_PRO/WEAK_FLASH。
 
 ### 3.2 关键时序坑（踩过两次，务必记住）
-1. **`session/event` 不会分发到 preset 作用域**（已验证，对照 dsh 0.1.0-rc.6）——路由器里 `ctx.on('session/event')` 永远收不到子代理/会话事件：`session/event` 只向会话自身的 emitCtx 分发，preset/root 作用域收不到（`dsh-session/lib/index.js:1467-1472` 实证）。现行 `router-bootstrap.mjs:171-192` 的弱模式近场引导钩子正是建在该事件上（另加 live agents 表回退定位），全量会话日志 grep "Router: classify this task" 零命中——**从未生效的死代码**（与 backlog F-8 一致），待改锚点或删除。
+1. **`session/event` 不会分发到 preset 作用域**（已验证，对照 dsh 0.1.0-rc.6）——路由器里 `ctx.on('session/event')` 永远收不到子代理/会话事件：`session/event` 只向会话自身的 emitCtx 分发，preset/root 作用域收不到（`dsh-session/lib/index.js:1467-1472` 实证）。原 `router-bootstrap.mjs` 的弱模式近场引导钩子正是建在该事件上，全量会话日志 grep "Router: classify this task" 零命中——**从未生效的死代码，已于 sync #58 删除**（2026-08-15，F-8）。若未来重建近场引导，需换 agent 作用域锚点（`session/event` 到不了 preset 作用域，实证于 0.1.0-rc.6）。
 2. **assemble 早于 user/message append**：agent loop 的 `preStep` 顺序是 `inbox.claim → systemPrompt.assemble → … → session.append("user/message")`。所以首轮 assemble 时 `session.events` 里**只有** `agent/inbox/spliced`（消息进收件箱时落的），没有 `user/message`。
 3. **正确取首条消息**：`sessionMode()` 先 `events.find(user/message && source.kind==='user')`，找不到就遍历 `agent/inbox/spliced` 的 `inserted[]` 里 `source.kind==='user'` 的第一条。**不要**用 `ctx.on('session/event')`。
 
