@@ -12,6 +12,7 @@
 - 代码标识符（`childId`、`pluginId`、`agent-preset/selected`、`byModel`）
 - 技术缩写与专名（LLM、API、id、token、ESM、Host、Client、GUI、web profile）
 - 设置项名（`llm-pi-ai`）、技能名（`cross-session-mailbox` 等）
+- 已知例外：`dev_stop_dyn_plugin` 的 description 整体保留英文（应急停止工具，面向救援场景；其参数说明仍为中文）。
 
 ## 术语对照表
 
@@ -44,6 +45,6 @@
 ## 必须保留的语义（翻译不得丢失）
 
 - `model_call`：一次性文本补全；非任务委派、非子代理；被借调模型一个回合、不能调工具。
-- `spawn_model_subagent` / `team_add_member`：默认继承父级（队长）；显式传参才覆盖该维度；提权（更高档位 / 跨系列 / 能力面超集）弹审批，未允许则取消。
+- `spawn_model_subagent` / `team_add_member`：默认继承父级（队长）；显式传参才覆盖该维度；提权（更高档位 / 跨系列 / 能力面超集 / sandbox 写权限比父级更宽）弹审批，未允许则取消。
 - `session_find` 优先于 `session_list`（省上下文）。
-- `wake: true` 消耗目标会话模型回合。
+- `wake: true` 消耗目标会话模型回合；仅主会话可用（子代理被拒），同一目标 60 秒内最多 3 次。

@@ -42,7 +42,7 @@ preset 的 `.mjs` 相对行从**用户主目录**解析裸 specifier，所以 `@
 - **同名工具/服务 "already registered" 会 throw**（`startHostHalf` 把 fiber 建在 `rootCtx.plugin({name:"cordis-dynamic"})` group 下——**根作用域，工具全局可见**，不是 per-agent）。所以收敛功能时只能有一个注册者。
 - `host.call(method, args)`：args 默认 **null**（handler 要容 null）；handler 抛错/方法不存在会 reject，handler 返回 JSON 则 resolve。
 
-**RPC + 工具 + UI 收敛模式（skillui 示例）**：持久化在 host 插件（`skillmanager.mjs` 纯服务壳：store + `ctx.provide('skillRegistry', {state/add/disable/enable/remove})`，**不注册任何工具**）；动态插件 `sklui` host 半部 `inject:['skills','skillRegistry']`，工具（skill_list/…/skill_remove）和 `harness.handle('skillui/*')` RPC 都转发到同一服务——工具与 UI 永远共享一份 owned Map / 一个 store，不会互抢 registry。
+**RPC + 工具 + UI 收敛模式（skillui 示例）**：持久化在 host 插件（`skillmanager.mjs` 纯服务壳：store + `ctx.provide('skillRegistry', {state/add/disable/enable/remove/setInject})`，**不注册任何工具**）；动态插件 `sklui` host 半部 `inject:['skills','skillRegistry']`，工具（skill_list/…/skill_remove）和 `harness.handle('skillui/*')` RPC 都转发到同一服务——工具与 UI 永远共享一份 owned Map / 一个 store，不会互抢 registry。
 
 **禁用机制**：entry 加 `"disabled": true`，`dynboot.mjs` 里 `if (entry.disabled === true) continue`。
 
@@ -61,7 +61,7 @@ preset 的 `.mjs` 相对行从**用户主目录**解析裸 specifier，所以 `@
 - `personaFor`：spec=`"You are a helpful software engineer assistant."`；react=hands-on doer；weak=按模型选 WEAK_PRO/WEAK_FLASH。
 
 ### 3.2 关键时序坑（踩过两次，务必记住）
-1. **`session/event` 不会分发到 preset 作用域**——路由器里 `ctx.on('session/event')` 永远收不到子代理/会话事件（弱模式引导从来没注入过就是证据）。
+1. **`session/event` 不会分发到 preset 作用域**（已验证，对照 dsh 0.1.0-rc.6）——路由器里 `ctx.on('session/event')` 永远收不到子代理/会话事件：`session/event` 只向会话自身的 emitCtx 分发，preset/root 作用域收不到（`dsh-session/lib/index.js:1467-1472` 实证）。现行 `router-bootstrap.mjs:171-192` 的弱模式近场引导钩子正是建在该事件上（另加 live agents 表回退定位），全量会话日志 grep "Router: classify this task" 零命中——**从未生效的死代码**（与 backlog F-8 一致），待改锚点或删除。
 2. **assemble 早于 user/message append**：agent loop 的 `preStep` 顺序是 `inbox.claim → systemPrompt.assemble → … → session.append("user/message")`。所以首轮 assemble 时 `session.events` 里**只有** `agent/inbox/spliced`（消息进收件箱时落的），没有 `user/message`。
 3. **正确取首条消息**：`sessionMode()` 先 `events.find(user/message && source.kind==='user')`，找不到就遍历 `agent/inbox/spliced` 的 `inserted[]` 里 `source.kind==='user'` 的第一条。**不要**用 `ctx.on('session/event')`。
 
@@ -95,7 +95,7 @@ preset 的 `.mjs` 相对行从**用户主目录**解析裸 specifier，所以 `@
 |---|---|---|
 | `dsh-subagent` `resolveChildAgentOptions` | 继承的是父**创建** options，不是 live route | modelroute 的 agent/request 钳制 |
 | `dsh-host-apiproxy` `selectionFor` | 新鲜子代理回退全局默认模型 → 升级 bug | modelroute `{prepend:true}` agent/request |
-| `dsh-subagent` `submit`/`sendReport` | send_message/report 走 followup 不打断 | 自研 subagent 的动机（远期） |
+| `dsh-subagent` `submit`/`sendReport` | send_message/report 走 followup 不打断 | 过渡补丁 subflt（reportFrom 包 steer + 同轮结算去重）；自研 subagent provider 是终态（远期，见 docs/SUBAGENT-PROVIDER.md） |
 | `dsh-agent-loop` `preStep` | assemble 早于 user/message append | router 直接读 inbox-splice |
 | `dsh-system-prompt` `assemble` | complete:true 在 waterfall 之后才折叠 | router 首轮自己 return minimal sections |
 | `dsh-tool-skill` catalog handler | skill-catalog 每 pre-step 注入 | router 首轮 prepend 过滤 |
@@ -112,8 +112,8 @@ mailbridge（跨会话）、llmrouter（模型委派）、modeswitch（切 prese
 ### Preset
 `.agent-presets/router-standard/`：agent.cordis.yml + router-bootstrap.mjs + router-core.mjs（改编自 dsh-router-standard / dsh-anchored-standard，MIT，见 NOTICE）。
 
-### 动态插件（`auto-plugins.json`）
-gitdk（disabled）、modpk、modlpk、imgsub、**sklui**（skill 管理器：6 个模型工具 + `skillui/*` RPC + 侧栏设置面板；持久化经 `skillRegistry` 服务桥转发到 skillmanager.mjs）。
+### 动态插件（`auto-plugins.json`，共 10 条）
+gitdk（disabled）、modpk（模式下拉框）、modlpk（模型+等级选择器）、imgsub（子代理图片客户端补丁）、**sklui**（skill 管理器：6 个模型工具 + `skillui/*` RPC + 侧栏设置面板；持久化经 `skillRegistry` 服务桥转发到 skillmanager.mjs）、**plins**（插件市场：`plinst/*` RPC + `dev_stop_dyn_plugin` 应急停止工具）、**sfind**（`session_find` 会话查找工具）、**subflt**（子代理 report/结算通道：reportFrom 包 steer + 同轮结算去重；过渡补丁，终态见 docs/SUBAGENT-PROVIDER.md）、**stfx**（侧栏 Settings 行对齐 + cordis 面板锚定）、**steer**（子代理会话 Ctrl+Enter 插话，host 直发 `agent.steer`）。
 
 ### 客户端面板（UI 层）
 - `@local/dsh-plugmgr`（插件市场）：**自主发现**——host/注入/官方三类经 `remote.pluginInventory.list()`（loader 条目：`entryId/moduleName/enabled/fiberPhase`）按模块名前缀分类（`./`、`@local/` = 本地；`@deepseek-ai/`、`cordis:` = 官方；其余 = 注入），不再硬编码。
@@ -134,8 +134,8 @@ gitdk（disabled）、modpk、modlpk、imgsub、**sklui**（skill 管理器：6 
 ## 8. 已知 open issue
 
 - ~~「用户输入在系统提示词之前注入」~~ **已关闭**：数据面无串位——首轮 system 极短（183/48 字符）是观感问题；两个 `system=[{}]` 空 request/header 已确认是 `dsh-agent-loop` `buildRequest` 的 seed 占位（`requestHeaderLogged=false` 时先 append 由 `{provider,model,reasoningEffort,maxTokens}` 派生的 initial header，此时 system 尚未组装，`canonicalHeader` 拿到空占位；claim 用户消息 + `system-prompt/assemble` 之后才 append 带真实 system 的 change header）。
-- **upstream：侧栏 Settings 行与 Cordis/自定义行原生不对齐**（2026-08-15 实测）：Settings 是独立组件，labelX 42 vs 40、按钮高 34 vs 49、左缘 x 8 vs 12。按"系统零接触"原则不修，归 DSH upstream（配合 #17 反转路线的终局方案）。
-- **backlog：非法 reasoningEffort 值静默失败**（sync #40 验证时发现）：spawn/team 显式传非法 effort（如 `low`，deepseek 枚举只有 off/high/max）导致子代理无输出静默失败——待加 effort 合法性校验 + fail-loud（明确报错而非静默）。
+- ~~**upstream：侧栏 Settings 行与 Cordis/自定义行原生不对齐**~~ **已由 stfx 在用户层修复**：动态插件 `stfx`（settingsfix）把设置行对齐到侧栏 badge（49px 高 / 12px 左缘 / 256px 宽 / 14px 图标），并把 cordis 动态面板 bottom 128px→112px——纯用户层注入，不碰 npm 包；upstream 的原生对齐问题仍归 DSH。
+- ~~**backlog：非法 reasoningEffort 值静默失败**~~ **已关闭**（sync #40 验证时发现）：`subagent-policy.mjs` 新增 `validateEffort`（:150-164），spawn / team_add_member 在审批前校验显式 effort，目标路由未声明该值即 fail-loud（'unsupported reasoningEffort …; supported: …'），不再表现为子代理无输出静默失败；枚举不可得时放行，由宿主在请求时校验。
 
 ## 9. 验证记录（2026-08-15）
 

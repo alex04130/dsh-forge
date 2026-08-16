@@ -1,9 +1,13 @@
 # 自研 subagent provider（设计文档）
 
 > 状态：设计阶段 / 独立里程碑（未排期）。
-> 过渡补丁：`dynamic/auto-plugins.json` 的 `subflt`（sync #8）在父会话 pre-step 过滤
-> `source.kind === 'subagent-report'` 消息，仅保留结算通知。本文档描述的终态实现
-> 上线后，`subflt` 应被摘除。
+> 对照基准：接口签名以 `@deepseek-ai/dsh` **0.1.0-rc.6** 为准（dsh-subagent /
+> dsh-subagent-*-driver / dsh-tool-cordis 同为 0.1.0-rc.6）。
+> 过渡补丁：`dynamic/auto-plugins.json` 的 `subflt` 已演进到 v2——① 包装
+> `subagents.reportFrom`，父会话忙碌时把 report 改走 steer（与结算通知同策略；
+> 父不可解析或 steer 被拒时回落官方 followup 转发）；② 在父会话 pre-step 做
+> **同轮去重**：仅丢弃「同轮已有同一 child 结算通知」的重复 report，中途进度
+> 报告保留。本文档描述的终态实现上线后，`subflt` 应被摘除。
 
 ## 1. 背景与问题
 
@@ -15,9 +19,10 @@
    `followup` 排入父会话 inbox——落在**之后的某一轮**，内容与结算通知重复。
 
 后果：同一次子代理产出跨轮出现两次，时间线混乱（尤其多子代理并行时交叠）。
-`subflt` 的过滤虽然去掉了重复，但也把**中途进度报告**一并过滤掉了——官方语义下
-子代理 turn 未结束时投递的 progress report 同样走 report 通道。终态实现需要保留
-中途汇报能力，而不是一刀切。
+subflt v1 的过滤虽然去掉了重复，但也把**中途进度报告**一并过滤掉了——官方语义下
+子代理 turn 未结束时投递的 progress report 同样走 report 通道。现行 v2 已改为
+同轮去重（只丢与结算通知重复的 report），中途汇报得以保留；但「report 与
+settlement 合并为一次投递」的终态语义仍未实现，见 §2。
 
 ## 2. 目标语义
 
@@ -35,6 +40,9 @@
 ## 3. 官方契约面（对齐依据）
 
 自研实现必须遵守宿主已公开的契约，才能被工具层无缝替换。
+
+> 本节接口引用官方 `@deepseek-ai/dsh-*` 包的内部实现，对照基准版本见文头声明；
+> 每次升级后按 §5 的验收清单逐条复查。
 
 ### 3.1 SubagentProvider（provider 注册面）
 
@@ -97,8 +105,8 @@ listDescendants(rootSessionId, signal?): Promise<SubagentDescendantListEntry[]>
 - **工具层不动**：`dsh-tool-subagent` / `dsh-tool-subagent-report` /
   `dsh-subagent-spawn-in-process` / `dsh-subagent-fork-in-process` 等继续走
   `SubagentRuntime` 公共面；自研 provider 只替换 provider 注册与投递语义。
-- **过渡期**：`subflt` 继续过滤重复 report；自研 provider 的 merge/dedup 生效后，
-  按子代理类型逐步摘除过滤规则，最终整体移除 `subflt`。
+- **过渡期**：`subflt` v2 继续做 report 通道 steer 化与同轮去重；自研 provider 的
+  merge/dedup 生效后，按子代理类型逐步摘除这些规则，最终整体移除 `subflt`。
 - **既有插件**：`modsub.mjs`（spawn_model_subagent）、`teamhub.mjs` 通过
   `startContinuable` 建立子代理，迁移不应改变它们拿到的 `childId`/`messageId`
   形状与 inbox 语义。

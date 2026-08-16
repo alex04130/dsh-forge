@@ -27,7 +27,7 @@ dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-pa
 - `dynboot` / `dynrestore` — auto-plugins.json 动态插件重启恢复 + 页面刷新重挂客户端
 - `imgsub-bridge` — 子代理图片消息转附件引用
 
-动态插件（`dynamic/auto-plugins.json`，内联 host+client 代码）：模式下拉框、模型+等级选择器、子代理图片补丁、技能管理面板、插件市场面板。
+动态插件（`dynamic/auto-plugins.json`，内联 host+client 代码）：模式下拉框、模型+等级选择器、子代理图片补丁、技能管理面板、插件市场面板，以及三条补丁型插件——subflt（子代理 report/结算通道 steer 化 + 同轮去重）、stfx（侧栏 Settings 行对齐）、steer（子代理会话 Ctrl+Enter 插话）。
 
 ## 为什么叫 forge
 
@@ -41,7 +41,7 @@ DSH 的插件生态和 Minecraft 的 mod 生态很像：一个稳定的宿主（
 dsh plugin --profile web add @dsh-forge/bundle
 ```
 
-`@dsh-forge/bundle` 声明官方 `dsh.bundle.patch` manifest，`dsh plugin add` 会自动把它注册进 profile 的 patch 层；装完重启 DSH（`dsh web`）即可。
+`@dsh-forge/bundle` 声明官方 `dsh.bundle.patch` manifest，`dsh plugin add` 会自动把它注册进 profile 的 patch 层；装完重启 DSH（`dsh web`）即可。需要 **0.1.4+**（0.1.3 及更早版本在 npm 路径下 boot 失败，为已知历史 bug）。
 
 **可选组件：任务感知路由 preset（手动复制）**
 
@@ -100,6 +100,14 @@ Windows / macOS / Linux 全平台可用：
 - **teamhub**：队长代认领的任务，成员本人无法 update（assignee 记录 memberId、鉴权用 sessionId）；`team_create` / `team_add_member` 的审批等待会串行阻塞其他 `team_*` 调用（P1 顺延项）。
 - **市场安装的插件以宿主进程权限执行**（与 `dsh plugin add` 同样无沙箱隔离）——只安装审查过来源的仓库；面板内已有警示横幅。
 
+## 故障排查
+
+- **装完没生效**：host 插件、preset、动态清单的改动都要重启 DSH（`dsh web`）才生效；npm 包装完同样需重启。
+- **npm 包装完没有路由 preset 与动态面板**：`@dsh-forge/bundle` 只含 host 插件与客户端包；preset 与动态面板需从源码仓库复制（见上文「可选组件」与「从源码安装」）。
+- **首轮锚定/工具收窄没发生**：锚定仅对 deepseek 系列模型生效（`anchorApplies`，默认 `/^deepseek/i`）；其他系列模型全程拿完整提示词与全量工具，属预期行为。
+- **npm 路径 boot 失败**：确认装的是 `@dsh-forge/bundle` 0.1.4+；0.1.3 及更早版本在 npm 路径下 boot 失败（已知历史 bug）。
+- **卸载**：`dsh plugin --profile web remove @dsh-forge/bundle` 后重启；源码安装的参照 `scripts/install.mjs` 的落点反向删除（插件、preset、`# dsh-suite:start/end` 标记块）。
+
 ## 工具定义
 
 本套件注册的全部模型工具，按插件分组：
@@ -108,9 +116,9 @@ Windows / macOS / Linux 全平台可用：
 |---|---|
 | **mailbridge**（跨会话消息桥） | `session_list`（列出会话）、`session_read`（读其他会话日志）、`session_send`（发消息给其他会话）、`mailbox_check`（收取离线来信） |
 | **llmrouter**（模型委派） | `model_list`（provider/model 目录 + byModel 反向索引）、`model_call`（一次性文本补全，非子代理） |
-| **modeswitch** | `switch_mode`（当前会话中途切换 agent preset，提权需确认） |
-| **teamhub**（代理团队） | `team_create` / `team_add_member` / `team_create_task` / `team_claim_task` / `team_update_task` / `team_send_message` / `team_status` / `team_delete` |
-| **modsub**（子代理派发） | `spawn_model_subagent`（可指定 provider/model/reasoningEffort/mode，默认全继承父，提权自动审批） |
+| **modeswitch** | `switch_mode`（当前会话中途切换 agent preset，提权需确认）、`session_mode`（查询任意会话当前生效的模式） |
+| **teamhub**（代理团队） | `team_create` / `team_add_member` / `team_add_members` / `team_create_task` / `team_claim_task` / `team_update_task` / `team_wait` / `team_send_message` / `team_status` / `team_delete` |
+| **modsub**（子代理派发） | `spawn_model_subagent`（可指定 provider/model/reasoningEffort/mode/sandbox，默认全继承父，提权自动审批） |
 | **injector**（运行时注入） | `dev_inject_plugin` / `dev_uninject_plugin` / `dev_injected_list` / `dev_reload_package` / `dev_plugin_status` |
 | **modelroute**（路由策略） | `model_taxonomy`（模型系列与档位）、`model_route_status`（当前路由与父路由钳制） |
 | **skillmanager + sklui**（技能管理） | `skill_list` / `skill_show` / `skill_add` / `skill_disable` / `skill_enable` / `skill_remove`（持久技能，支持默认注入 / 渐进式披露） |
@@ -135,7 +143,7 @@ docs/       架构文档（注入方式对比、分层规则、锚定规则、ca
 
 ## 架构文档
 
-`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。另见 [工具描述规范（中文化）](docs/tool-descriptions.zh.md)、[工具详细定义参考](docs/tools-reference.zh.md)。
+`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。另见 [工具描述规范（中文化）](docs/tool-descriptions.zh.md)、[工具详细定义参考](docs/tools-reference.zh.md)、[跨平台验证指南](docs/PLATFORM-VERIFY.md)、[自研 subagent provider 设计（提案）](docs/SUBAGENT-PROVIDER.md)、[协作约定](CONTRIBUTING.md)。
 
 ## 友情链接
 

@@ -27,6 +27,7 @@
 - 新功能/大改先合入 `dev`，在 dev 上完成运行时验证（重启、截图、回归），稳定后再合并回 `master` 并发布。
 - 日常小修（同步清单驱动的微改）可直推 `master`，但涉及新特性或行为变更的一律走 dev。
 - 合并流程：`git checkout master && git merge dev`（或 GitHub PR dev→master）；发布时在 master 上打 tag（如 `v0.1.0`）。
+- **发布清单（npm）**：① 在 master 上 bump `bundle/package.json` 的 `version`，并核对 `cordis.npm.yml` 引用与 `files` 白名单；② 发布客户端包：`scripts/publish-client-packages.sh <版本>`（默认 0.1.1；POSIX、维护者本机专用——脚本复制到临时目录改写 name/version、去掉 private、重写 client.js 里的 `@local/*` 注册 id）；③ 发布 bundle 本体（`bundle/` 下 `npm publish --access public`）；④ 打 tag（如 `v0.1.4`）并 push；⑤ 发布后回归：`npm run check` + 按 `docs/PLATFORM-VERIFY.md` 清单做运行时验收。
 - 分支保护规则需在 GitHub 网页侧设置（Settings → Branches → Branch protection rules：master 与 dev 均建议开启「require pull request」由仓库侧/运行时侧互相 review）；本机无 gh CLI，暂以本约定为准。
 
 ## 重启边界

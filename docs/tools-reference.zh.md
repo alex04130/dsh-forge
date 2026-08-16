@@ -19,7 +19,7 @@
 - **行号约定**：文中括号注明源文件与行号（如 `(mailbridge.mjs:192)`），行号以本次生成时读取的文件为准；`auto-plugins.json` 的 `hostCode` 是 JSON 字符串，行号指该字符串按 `\n` 展开后的行号（即文中 `hostCode L41` 表示该插件 hostCode 内容的第 41 行）。
 - **标注约定**：凡代码行为与描述/预期不一致、或代码里没有依据的细节，一律标注「（待审校确认）」；不编造代码里没有的行为。
 - **通用约定（所有工具）**：
-  - 全部 32 个工具的输出都是**一个 pretty-print 的 JSON 字符串**（`jsonText` = `JSON.stringify(value, null, 2)`），不是结构化对象。
+  - 全部 34 个工具的输出都是**一个 pretty-print 的 JSON 字符串**（`jsonText` = `JSON.stringify(value, null, 2)`），不是结构化对象。
   - 每个工具都包了一层统一异常处理（各插件的 `registerTool` 包装或 `defineTool` 内的 try/catch）：`execute` 抛出的任何异常转为 `{"ok": false, "error": "<message>"}`。
   - 除 `dev_inject_plugin` 外，各工具明确失败路径均返回 `ok: false` 并带 `error`（或 `cancelled`）字段，见各小节「边界与失败」。
   - 注册形态分两种：composition 插件（mailbridge / llmrouter / teamhub / injector / modelroute / modsub / modeswitch）直接用 `defineTool` 注册；auto-plugins 三条动态插件用 `harness.defineTool` + `harness.registerTool(ctx, tool)` 注册（见附录）。
@@ -28,7 +28,7 @@
 
 ---
 
-## 工具清单速查（插件 × 工具，共 32 个）
+## 工具清单速查（插件 × 工具，共 34 个）
 
 | 插件 | 工具 | 一句话用途 |
 | --- | --- | --- |
@@ -40,15 +40,17 @@
 | llmrouter | `model_call` | 一次性纯文本模型借调（非子代理），流式取回完整回复 |
 | modeswitch | `switch_mode` | 会话中途切换 agent preset，能力增加时先审批 |
 | modeswitch | `session_mode` | 查询任意会话当前生效的模式（在线读组合，离线读日志） |
-| teamhub | `team_create` | 以调用方为队长创建团队（每队长至多一个） |
-| teamhub | `team_add_member` | 派发可续子代理成员，提权先审批，上限 8 人 |
+| teamhub | `team_create` | 以调用方为队长创建团队（每队长至多一个；可随队批量加成员/建任务） |
+| teamhub | `team_add_member` | 派发可续子代理成员，提权先审批，上限 16 人 |
+| teamhub | `team_add_members` | 批量派发成员：逐项独立审批与失败隔离 |
 | teamhub | `team_create_task` | 拆任务，可声明依赖与指派人 |
 | teamhub | `team_claim_task` | 认领任务（依赖须全部完成；队长可代认领） |
 | teamhub | `team_update_task` | 推进任务状态（六状态机，限 assignee / 队长） |
+| teamhub | `team_wait` | 挂起当前回合，等成员消息或任务完成（默认 600s，上限 3600s） |
 | teamhub | `team_send_message` | 给队长或成员发消息（在线投递 / 离线排队） |
 | teamhub | `team_status` | 团队全貌：成员在线状态、任务板、收件箱 |
 | teamhub | `team_delete` | 打断成员并归档团队 |
-| modsub | `spawn_model_subagent` | 派发可续子代理，默认全继承父级，提权先审批 |
+| modsub | `spawn_model_subagent` | 派发可续子代理，默认全继承父级，提权（含 sandbox 拓宽）先审批 |
 | injector | `dev_inject_plugin` | 运行时注入本地插件包（symlink + loader.create + 注册表） |
 | injector | `dev_uninject_plugin` | 取消注入（释放 fiber、移除 symlink、删注册表条目） |
 | injector | `dev_injected_list` | 列出所有已注入插件包（名称 + 源目录） |
@@ -127,20 +129,20 @@
 - **一句话用途**：向另一会话发消息——在线即时投递并唤醒；离线持久排队、下次会话启动时送达；`wake:true` 强制冷启动离线目标。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 向本 DSH 进程中的另一会话发送消息。在线目标会立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。`wake: true` 时离线目标立即冷启动（加载其已持久化日志，会话重启并立刻处理该消息），而不是等它下次手动启动——用于强制睡眠中的会话现在就干活；会消耗目标会话的模型回合。接收方看到的文本带 `[cross-session message from <session name> (<sessionId>)]` 前缀。完整工作流见 `cross-session-mailbox` 技能。
+  > 向本 DSH 进程中的另一会话发送消息。在线目标会立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。`wake: true` 时离线目标立即冷启动（加载其已持久化日志，会话重启并立刻处理该消息），而不是等它下次手动启动——用于强制睡眠中的会话现在就干活；会消耗目标会话的模型回合。wake 仅主会话可用（子代理被拒），同一目标 60 秒内最多 3 次。接收方看到的文本带 `[cross-session message from <session name> (<sessionId>)]` 前缀。完整工作流见 `cross-session-mailbox` 技能。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
   | --- | --- | --- | --- | --- |
   | targetSessionId | string | 是 | — | 目标会话 id（来自 session_list） |
   | text | string | 是 | — | 消息正文，禁止空串 |
-  | wake | boolean | 否 | false | 强制唤醒离线目标：冷启动其已持久化日志并立即送达（消耗目标会话模型回合） |
+  | wake | boolean | 否 | false | 强制唤醒离线目标：冷启动其已持久化日志并立即送达（消耗目标会话模型回合）；仅主会话可用（子代理被拒），同一目标 60 秒内最多 3 次 |
 
 - **输出**（三种成功形态 + 三种失败形态）：
   - 在线投递：`{"ok": true, "delivered": "live", "targetSessionId": "...", "messageId": "...", "from": "..."|null, "fromName": "..."|null}`（`mailbridge.mjs:231`）
   - 排队：`{"ok": true, "delivered": "queued", ...同 live 字段}`（`mailbridge.mjs:280`）
   - 唤醒投递：`{"ok": true, "delivered": "woken", ..., "agentOptions": {"provider": "...", "model": "..."}|null}`（`mailbridge.mjs:259`）
-  - 失败：空正文（`mailbridge.mjs:202`）；`{"ok": false, "error": "wake failed: <原因>", "targetSessionId"}`（`mailbridge.mjs:263`）；`{"ok": false, "error": "session resumed but did not register; message not delivered", "targetSessionId"}`（`mailbridge.mjs:261`）；`{"ok": false, "error": "unknown session id \"...\"; use session_list to see available sessions"}`（`mailbridge.mjs:269`）
+  - 失败：空正文（`mailbridge.mjs:231`）；wake 守卫两条——`{"ok": false, "error": "wake is restricted to the main session (subagents cannot cold-start sessions)"}` 与 `{"ok": false, "error": "wake rate limit exceeded for this target (3 per 60s); wait before waking again"}`（`mailbridge.mjs:105-116, 264-265`）；`{"ok": false, "error": "wake failed: <原因>", "targetSessionId"}`（`mailbridge.mjs:308`）；`{"ok": false, "error": "unknown session id \"...\"; use session_list to see available sessions"}`（`mailbridge.mjs:314`）
 - **语义**：
   - **消息包裹（begin/end 标记）**：正文以 `[cross-session message from <发送方标题> (<发送方 id>)]` 开头、`[cross-session message end]` 结尾；发送方未知时标签为 `unknown`（`mailbridge.mjs:203-217`）。正文尾部的旧式结束标记（`[/cross-session message]`、`[cross-session message end]`）先用正则剥掉，避免标记叠加（`mailbridge.mjs:209`）。
   - **回复指引**：当能确定发送方 id 时，包裹末尾附中文提示——若消息要求回复，处理后须用 `session_send` 把结论发回给发送方会话而不是只写在本地（`mailbridge.mjs:214-216`）。
@@ -149,9 +151,10 @@
   - **离线排队**：先 best-effort 校验会话 id 存在（不存在则报 unknown session id），再经写串行队列 `enqueue` 把 `{id, from, fromName, to, text: wrapped, ts}` 写入邮箱 `msg` 表（`mailbridge.mjs:266-279`）。投递发生在目标下次 `agent/session-start` 的监听器里（`mailbridge.mjs:305-330`），成功后删除、失败保留重试。
 - **边界与失败**：
   - `text` 为空串直接失败；wake 与排队路径互斥（wake 成功即返回）。
-  - wake 时 `agents.resume` 不可用 → 落到普通排队路径（`mailbridge.mjs:234` 条件不满足即跳过）。
-  - **在线 steer/followup 抛错后降级排队**：存在投递半成功也进队列、目标最终收到两份的风险（代码没有去重），标注「（待审校确认）」。
-  - **woke 路径投递失败的回退（sync #37 已修）**：原先 catch 注释声称「message still queued below if delivery fails」但 catch 后无条件 `return 'woken'`、排队代码不可达（丢消息 bug）。现行为：steer/followup 失败 → 重试一次 `followup`（steer 可能与唤醒回合竞争）→ 仍失败 → 落下方持久队列，不谎报 woken；resumed 未注册仍报错返回。
+  - **wake 守卫（安全评审 t7-H3）**：`wake: true` 仅主会话可用（按会话头 origin/parentSession 判定，子代理被拒），且同一目标滑动窗口 60 秒内最多 3 次；守卫不通过直接报错返回，不进排队（`mailbridge.mjs:90-116, 264-265`）。
+  - wake 时 `agents.resume` 不可用 → 落到普通排队路径（`mailbridge.mjs:263` 条件不满足即跳过）。
+  - **在线 steer/followup 抛错后降级排队**：存在投递半成功也进队列、目标最终收到两份的风险（已对代码确认：降级 catch 里没有去重逻辑，`mailbridge.mjs:261`）。
+  - **woken 路径投递失败的回退（sync #37 + P0-2 已修）**：原先 catch 注释声称「message still queued below if delivery fails」但 catch 后无条件 `return 'woken'`、排队代码不可达（丢消息 bug）。现行为：steer/followup 失败 → 重试一次 `followup`（steer 可能与唤醒回合竞争）→ 仍失败 → 落下方持久队列，不谎报 woken；resume 成功但代理未注册时同样**落到持久队列**收尾而不是报错（`mailbridge.mjs:284-306`：每条路径都以在线投递或持久队列结束，不丢消息）。
   - 存在性检查读目录失败时被吞掉，消息仍会照常排队（`mailbridge.mjs:270`）。
 - **关联**：`session_list` / `session_find`（取 id）、`mailbox_check`（收取端）、`session_read`；技能 `cross-session-mailbox`；队列投递依赖 mailbridge 的 `agent/session-start` 监听器。
 
@@ -315,19 +318,21 @@
 ### team_create
 
 - **所属插件**：teamhub
-- **一句话用途**：以调用方为队长创建团队；一个队长同一时间只能带领一个团队。
+- **一句话用途**：以调用方为队长创建团队；一个队长同一时间只能带领一个团队；可随队批量添加成员与任务。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 创建一个以你（调用会话）为队长的代理团队；一个队长同一时间只带领一个团队。之后用 `team_add_member` 添加成员、`team_create_task` 按依赖拆分任务、`team_send_message` 与成员交流。编排团队前先加载 agent-teamwork 技能：它涵盖团队设计、工作流和何时该沟通。
+  > 创建一个以你（调用会话）为队长的代理团队；一个队长同一时间只带领一个团队。可用 `members` 数组在建队时一次添加多个成员（每项含 memberId/role/prompt 及可选的 provider/model/reasoningEffort/mode，与 `team_add_member` 同策略：默认继承队长、提权逐项审批），可用 `tasks` 数组在建队时按数组序创建任务（每项含 title/description/assignee/dependencies；依赖引用的任务必须先出现在本数组或已存在于团队）。之后用 `team_add_member` 补成员、`team_add_members` 批量补成员、`team_create_task` 补任务、`team_send_message` 与成员交流。编排团队前先加载 agent-teamwork 技能：它涵盖团队设计、工作流和何时该沟通。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
   | --- | --- | --- | --- | --- |
   | name | string | 是 | — | 团队名，1-64 字符 |
   | goal | string | 否 | 空串 | 一行团队目标，送达各成员 |
+  | members | array | 否 | [] | 建队时一次添加的成员数组（至多 16 项）；每项 `{memberId, role, prompt, provider?, model?, reasoningEffort?, mode?, sandbox?}`，与 `team_add_member` 同策略，逐项独立审批与失败隔离 |
+  | tasks | array | 否 | [] | 建队时按数组序创建的任务；每项 `{title, description?, assignee?, dependencies?}`，依赖引用的任务必须先出现在本数组或已存在于团队 |
 
-- **输出**：`{"ok": true, "team": {"teamId", "name", "goal", "captain", "members": [], "tasks": [], "nextTask": 1, "createdAt"}}`（`teamhub.mjs:143`，记录形如 `teamhub.mjs:130-139`）。
-- **语义**：以调用方会话 id 为 key 在 `team` 表建记录（队长即 key）；已带队再建直接抛错。
+- **输出**：`{"ok": true, "team": {"teamId", "name", "goal", "captain", "members", "tasks", "nextTask", "createdAt"}, "memberResults"?: [...], "taskResults"?: [...]}`（`teamhub.mjs:336-341`）；传了 members/tasks 时分别附逐项结果（每项 `{ok, memberId|taskId, ...}` 或 `{ok: false, error}`）。
+- **语义**：以调用方会话 id 为 key 在 `team` 表建记录（队长即 key）；已带队再建直接抛错。先建空团队记录，再逐个走共享 `addMember` 路径派发成员（单项提权被拒或失败只影响该项），最后按数组序建任务（依赖只接受"本数组先出现"或"已存在"的任务 id）。
 - **边界与失败**：
   - 调用方 id 解析不出 → `ok: false`（`teamhub.mjs:123`）。
   - 名称空或超 64 字符 → `{"ok": false, "error": "team name must be 1-64 characters"}`（`teamhub.mjs:125`）。
@@ -337,7 +342,7 @@
 ### team_add_member
 
 - **所属插件**：teamhub
-- **一句话用途**：派发一个带角色与任务提示词的可续子代理成员；提权（模型档位/系列、模式能力面）先审批；上限 8 人。
+- **一句话用途**：派发一个带角色与任务提示词的可续子代理成员；提权（模型档位/系列、模式能力面、sandbox 拓宽）先审批；上限 16 人。
 
 - **工具提示词（模型可见的 description，原文）**：
   > 添加团队成员：派发一个带指定角色和任务提示词的可续子代理会话（成员继承本会话的组合，包括团队工具）。你选的成员 id 就是 `team_send_message` 发给它的地址。与 `spawn_model_subagent` 一样，可选的 `provider`/`model`/`reasoningEffort`/`mode` 覆盖默认继承队长；任何提权（更高的模型档位、跨系列换模型，或插件行能力面不是队长子集的模式）都会请求用户审批。完整工作流见 agent-teamwork 技能。
@@ -352,20 +357,42 @@
   | model | string | 否 | 继承队长当前模型 | 成员模型 id |
   | reasoningEffort | string | 否 | 继承队长当前强度 | 成员思考强度 |
   | mode | string | 否 | 继承队长组合 | 成员模式 id（如 "router-standard"、"cordis"） |
+  | sandbox | string | 否 | 继承部署默认 | 成员沙箱模式（"read-only" \| "workspace-write" \| "danger-full-access"）；比队长更宽的写权限会请求审批 |
 
-- **输出**：`{"ok": true, "member": {"id", "sessionId", "role"}, "mode"?, "approvedEscalations"?: [...]}`（`teamhub.mjs:223`）；提权审批通过时附 `approvedEscalations`。
+- **输出**：`{"ok": true, "member": {"id", "sessionId", "role"}, "mode"?, "approvedEscalations"?: [...]}`（`teamhub.mjs:226`）；提权审批通过时附 `approvedEscalations`。
 - **语义**：
-  - 父级基准：`policy.liveRoute(agent)`（共享库，取 `requestHeader().config` 或创建选项）得到父路由；`parentModel = route.model ?? header.config.model`；成员 `model = 显式 ?? 父模型`；`effort = 显式 ?? 父 header 的 reasoningEffort`（`teamhub.mjs:177-182`）。
-  - **提权审批（共享库）**：`collectModelEscalations(parentModel, childModel)`（同系列更高档位 / 跨系列换模型）+ `collectPresetEscalations`（目标模式能力面非父级子集）；任一命中 → `approval.request({toolName: 'team_add_member'})`，结果必须是 `allowed-once`，否则 `{"ok": false, "cancelled": true, "reason": "the user did not allow this member escalation …", "escalations": [...]}`（`teamhub.mjs:184-201`）。注意：**仅换 provider（模型不变）不触发审批**（模型比较只看 id）。
-  - 构造成员 persona 提示词：声明成员身份、团队目标、工作协议（只认领自己的任务、完成后 `team_update_task completed`、用 `team_send_message` 沟通、行动前查 `team_status`），后接队长任务（`teamhub.mjs:203`）。
-  - `subagents.startContinuable({provider: 'spawn', label: "<memberId> (<role>)", request: {prompt, parent: agent, agentOptions?}})` 派发；显式 provider/model 写入 `agentOptions`（`teamhub.mjs:204-216`）。
-  - `policy.register(childId, {mode?, effort?})`：mode 在子代理**首次 pre-step 前**重组合、effort 钉在每个模型请求上（共享库 `installChildPolicy`，`subagent-policy.mjs:128-204`）。
+  - 父级基准：`policy.liveRoute(agent)`（共享库，取 `requestHeader().config` 或创建选项）得到父路由；`parentModel = route.model ?? header.config.model`；成员 `model = 显式 ?? 父模型`；`effort = 显式 ?? 父 header 的 reasoningEffort`；父沙箱取 `sandboxPolicy.overrideOf(session)`，缺省回退部署默认（`teamhub.mjs:157-168`）。
+  - **effort 校验（fail-loud）**：显式 `reasoningEffort` 先过共享库 `validateEffort`——目标路由未声明该值直接报错返回（'unsupported reasoningEffort "…" for \<provider\>/\<model\>; supported: …'），不再让子代理静默无输出（`teamhub.mjs:170-173`，见共享库一节）。
+  - **提权审批（共享库）**：`collectModelEscalations(parentModel, childModel)`（同系列更高档位 / 跨系列换模型）+ `collectPresetEscalations`（目标模式能力面非父级子集）+ `collectSandboxEscalations`（sandbox 写权限比队长更宽，含未知 sandbox 值）；任一命中 → `approval.request({toolName: 'team_add_member'})`，结果必须是 `allowed-once`，否则 `{"ok": false, "cancelled": true, "reason": "the user did not allow this member escalation …", "escalations": [...]}`（`teamhub.mjs:175-193`）。注意：**仅换 provider（模型不变）不触发审批**（模型比较只看 id）。
+  - 构造成员 persona 提示词：声明成员身份、团队目标、工作协议（只认领自己的任务、完成后 `team_update_task completed`、用 `team_send_message` 沟通、行动前查 `team_status`），后接队长任务（`teamhub.mjs:195`）。
+  - `subagents.startContinuable({provider: 'spawn', label: "<memberId> (<role>)", request: {prompt, parent: agent, agentOptions?}})` 派发；显式 provider/model 写入 `agentOptions`（`teamhub.mjs:196-223`）。
+  - `policy.prepare({parentId, mode?, effort?, sandbox?})`：spawn **之前**预登记（`startContinuable` 同步分发 `agent/created`，之后登记永远太迟），spawn 失败用 `staged.cancel()` 撤回；mode 在子代理**首次 pre-step 前**重组合、effort 钉在每个模型请求上、sandbox 以 `sandbox/mode` 事件落日志（共享库 `installChildPolicy`，`subagent-policy.mjs:226-262, 314-333`）。
 - **边界与失败**：
-  - 无调用上下文 / 无 agent 上下文、memberId/role 非法、无团队、成员已存在、超过 8 人上限（`teamhub.mjs:170`）分别报 `ok: false`。
+  - 无调用上下文 / 无 agent 上下文、memberId/role 非法、无团队、成员已存在、超过 16 人上限（'team member limit (16) reached'，`teamhub.mjs:149`）分别报 `ok: false`。
   - 需审批但审批服务未挂载 → `{"ok": false, "error": "adding this member escalates (…; …) but no approval service is mounted to confirm it"}`（`teamhub.mjs:190`）。
   - 能力面解析失败 → 保守审批（同 switch_mode，见共享库）。
   - 成员是**可续子代理会话**：`sessionId` 即子会话 id，用户可在 GUI 打开继续对话。
 - **关联**：`spawn_model_subagent`（同策略）、`team_status`、`team_send_message`；共享库 `lib/subagent-policy.mjs`；`modelroute.mjs` 对成员（子代理）路由的隐式钳制（见 model_route_status）；技能 `agent-teamwork`。
+
+### team_add_members
+
+- **所属插件**：teamhub
+- **一句话用途**：批量添加团队成员：一次传入多个成员数组，逐项独立审批与失败隔离。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 批量添加团队成员：一次传入多个成员数组（每项含 memberId/role/prompt 及可选的 provider/model/reasoningEffort/mode）。逐项独立审批与失败隔离：某个成员提权被拒绝或 spawn 失败只影响该项，其余继续。与 `team_add_member`（单个）同策略。完整工作流见 agent-teamwork 技能。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | members | array | 是 | — | 成员数组；每项 `{memberId, role, prompt, provider?, model?, reasoningEffort?, mode?, sandbox?}`，字段约束同 `team_add_member` |
+
+- **输出**：`{"ok": true, "teamName", "results": [...]}`（`teamhub.mjs:413`）；`results` 逐项对应该成员的 `addMember` 结果（`{ok: true, member: {...}, mode?, approvedEscalations?}` 或 `{ok: false, memberId, error}`）。
+- **语义**：逐项走与 `team_add_member` 完全相同的共享 `addMember` 路径（校验、effort 校验、提权审批、spawn、`policy.prepare` 登记）；某项提权被拒或抛错只记入该项结果，其余项继续（`teamhub.mjs:393-415`）。
+- **边界与失败**：
+  - 无调用上下文 / 无 agent 上下文 → `ok: false`；`members` 为空数组 → `{"ok": false, "error": "members must be a non-empty array"}`（`teamhub.mjs:399`）；无团队 → `ok: false`。
+  - 单项失败不中断整体——逐项的失败原因在 `results` 里。
+- **关联**：`team_add_member`（单项版）、`team_create`（建队时可随队批量加）、`team_status`；技能 `agent-teamwork`。
 
 ### team_create_task
 
@@ -413,7 +440,7 @@
   - 认领即写 `task.status = 'claimed'`、`task.assignee = claimant`（`teamhub.mjs:306-307`）。
 - **边界与失败**：
   - 非队长非成员 → `ok: false`；任务不存在、无 claimant、claimant 非法、依赖未完成均报 `ok: false`（`teamhub.mjs:293-304`）。
-  - **不校验任务当前状态**：任意状态（含 completed/failed）的任务都可被 claim 覆盖为 `claimed`（`teamhub.mjs:306`），标注「（待审校确认）」。
+  - **不校验任务当前状态**：任意状态（含 completed/failed）的任务都可被 claim 覆盖为 `claimed`（已对代码确认：claim 路径只校验依赖与 claimant 身份，不看当前 status，`teamhub.mjs:484-498`）。
   - 「取消认领退回 pending」由 `team_update_task` 的 `claimed → pending` 实现，本工具不含该逻辑。
 - **关联**：`team_update_task`、`team_create_task`；技能 `agent-teamwork`。
 
@@ -439,8 +466,38 @@
   - 权限：`me !== captain && task.assignee !== me` → 拒绝（`teamhub.mjs:343`）。
   - 按 `TASK_TRANSITIONS` 校验流转，非法流转报错并在 error 中列出允许的目标（`teamhub.mjs:344-345`）。
   - `output` 只在非空字符串时覆盖写入（空串不更新，`teamhub.mjs:347`）。
+  - 流转到 `completed` 时会唤醒所有在 `team_wait` 里等该任务的成员（`wakeWaiters`，`teamhub.mjs:539`）。
 - **边界与失败**：非法 status、不在任何团队、任务不存在、非 assignee/队长、非法流转各报 `ok: false`（含允许列表）；completed/failed/cancelled 为终态、任何流转都拒绝。
 - **关联**：`team_claim_task`、`team_status`；技能 `agent-teamwork`。
+
+### team_wait
+
+- **所属插件**：teamhub
+- **一句话用途**：暂停当前回合，挂起等待另一名队员的消息或某个任务的完成（任一满足即唤醒）；用它替代轮询 `team_status`。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 暂停当前回合，等待另一名队员的消息或某个任务的完成（两者都给时任一满足即唤醒）。等待期间回合挂起、不消耗额外步骤：目标发来消息、目标任务 completed、或队长发来任何消息都会立即唤醒你继续。超时（默认 600 秒，上限 3600 秒）后返回 timeout，模型可再次调用继续等。队长随时可发消息拆掉等待，因此不会死锁。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | memberId | string | 否 | — | 要等待的成员 id；省略则等待任意消息（与 taskId 至少给一个） |
+  | taskId | string | 否 | — | 要等待的任务 id（如 "t2"）；该任务 completed 时唤醒 |
+  | timeoutSeconds | number | 否 | 600（上限 3600） | 最长等待秒数；非法/非正数回落默认，超过 3600 截断 |
+
+- **输出**：
+  - 消息唤醒：`{"ok": true, "wokenBy": "message", "from": "<发送方会话 id>"}`
+  - 任务完成：`{"ok": true, "wokenBy": "task-completed", "taskId"}`（等待开始前就已完成则附 `note: "the task was already completed before the wait started"`）
+  - 超时：`{"ok": true, "wokenBy": "timeout", "afterSeconds": <秒>}`
+  - 中止：`{"ok": false, "error": "wait aborted (turn cancelled)"}`（回合取消）；`{"ok": false, "error": "wait aborted (member session disposed)"}`（等待期间本方会话被 dispose）
+- **语义**：
+  - 调用方注册进进程内 `waiters` 挂起表；`team_send_message`（在线与排队两条路径都触发）唤醒目标是本会话的等待者，`team_update_task` 流转到 `completed` 唤醒等该 taskId 的等待者，`agent/disposed` 中止本方所有等待（`teamhub.mjs:49-60, 544-589, 647/658, 539, 732-736`）。
+  - `memberId` 过 `cleanId` 校验且必须是本团队成员；`taskId` 必须是本团队任务。
+  - 依赖 `timer` 服务：缺失时直接报错 `{"ok": false, "error": "timer service unavailable; waiting is disabled — poll team_status instead"}`。
+- **边界与失败**：
+  - `memberId` 与 `taskId` 都为空 → `{"ok": false, "error": "memberId or taskId is required"}`；不在任何团队、成员/任务不存在于本团队各报 `ok: false`。
+  - 挂起的是**当前回合**：超时返回后模型可再次调用继续等；队长发消息总能拆掉等待，不会死锁。
+- **关联**：`team_send_message`（唤醒源）、`team_update_task`（completed 唤醒源）、`team_status`（轮询替代方案）；技能 `agent-teamwork`。
 
 ### team_send_message
 
@@ -508,7 +565,7 @@
 
 ## modsub（子代理派发）
 
-**插件级说明**：`spawn_model_subagent` 的实现。默认**全继承父代理**（provider/model/effort/预设），保证计费与能力面不悄悄变化；显式参数只覆盖对应维度。提权审批与子代理侧 mode/effort 注入全部来自共享库 `lib/subagent-policy.mjs`。
+**插件级说明**：`spawn_model_subagent` 的实现。默认**全继承父代理**（provider/model/effort/预设/沙箱），保证计费与能力面不悄悄变化；显式参数只覆盖对应维度。提权审批、显式 effort 校验与子代理侧 mode/effort/sandbox 注入全部来自共享库 `lib/subagent-policy.mjs`。
 
 ### spawn_model_subagent
 
@@ -527,16 +584,19 @@
   | model | string | 否 | 继承父级 live 路由模型 | 显式模型 id |
   | reasoningEffort | string | 否 | 继承父级当前强度 | 显式思考强度（供应商专属 id） |
   | mode | string | 否 | 继承父级组合 | 显式 agent preset id |
+  | sandbox | string | 否 | 继承部署默认 | 显式沙箱模式（"read-only" \| "workspace-write" \| "danger-full-access"）；比父级更宽的写权限会请求审批 |
 
-- **输出**：`{"ok": true, "childId", "messageId", "route": {"provider", "model", "reasoningEffort"|null}, "mode"?, "approvedEscalations"?: [...], "note": "the child session inherits this session composition (same tools, same workspace); send it follow-up input by opening its session in the GUI"}`（`modsub.mjs:115-123`）。`childId` 即子会话 id。
+- **输出**：`{"ok": true, "childId", "messageId", "route": {"provider", "model", "reasoningEffort"|null}, "mode"?, "sandbox"?, "approvedEscalations"?: [...], "note": "the child session inherits this session composition (same tools, same workspace); send it follow-up input by opening its session in the GUI"}`（`modsub.mjs:141-150`）。`childId` 即子会话 id。
 - **语义**：
-  - **继承规则**（`modsub.mjs:67-73`）：父模型取 `policy.liveRoute(agent)` 的 model（无则取父 header config），子模型 = 显式 ?? 父模型；**provider 只有显式传入才会换**（单独显式传 model 保留父 provider——计费安全）；effort = 显式 ?? 父 header 的 `reasoningEffort`（spawn 时快照，作用于子代理每一回合）。
-  - **审批三条件（共享库）**：同系列内更高档位、跨系列换模型、目标 preset 插件行能力面不是父级子集。`escalations = collectModelEscalations(parentModel, childModel) + collectPresetEscalations(...)`；任一命中 → `approval.request({toolName: 'spawn_model_subagent', reason: 'subagent escalation: ...'})`，结果必须为 `allowed-once`，否则 `{"ok": false, "cancelled": true, "reason": "the user did not allow this subagent escalation (…); nothing was spawned", "escalations"}`（`modsub.mjs:75-93`）。
-  - `subagents.startContinuable({provider: 'spawn', label, request: {prompt, parent: agent, agentOptions?}})` 派发；显式 provider/model 才进 `agentOptions`（`modsub.mjs:95-108`）。
-  - `policy.register(childId, {mode?, effort?})`：mode 在子代理首次 pre-step **之前**重组合（`presets.recompose`），effort 在子代理**每个** `agent/request` 上钉住（`subagent-policy.mjs:128-204`）。
+  - **继承规则**（`modsub.mjs:67-82`）：父模型取 `policy.liveRoute(agent)` 的 model（无则取父 header config），子模型 = 显式 ?? 父模型；**provider 只有显式传入才会换**（单独显式传 model 保留父 provider——计费安全）；effort = 显式 ?? 父 header 的 `reasoningEffort`（spawn 时快照，作用于子代理每一回合）；父沙箱取 `sandboxPolicy.overrideOf(session)`，缺省回退部署默认。
+  - **effort 校验（fail-loud）**：显式 `reasoningEffort` 在审批前先过共享库 `validateEffort`——目标路由未声明该值直接报错返回（`modsub.mjs:84-87`），不再让子代理静默无输出。
+  - **审批四条件（共享库）**：同系列内更高档位、跨系列换模型、目标 preset 插件行能力面不是父级子集、sandbox 写权限比父级更宽（含未知 sandbox 值）。`escalations = collectModelEscalations(parentModel, childModel) + collectPresetEscalations(...) + collectSandboxEscalations(...)`；任一命中 → `approval.request({toolName: 'spawn_model_subagent', reason: 'subagent escalation: ...'})`，结果必须为 `allowed-once`，否则 `{"ok": false, "cancelled": true, "reason": "the user did not allow this subagent escalation (…); nothing was spawned", "escalations"}`（`modsub.mjs:89-108`）。
+  - `subagents.startContinuable({provider: 'spawn', label, request: {prompt, parent: agent, agentOptions?}})` 派发；显式 provider/model 才进 `agentOptions`（`modsub.mjs:124-139`）。
+  - `policy.prepare({parentId, mode?, effort?, sandbox?})`：spawn **之前**预登记（`startContinuable` 同步分发 `agent/created`，之后登记永远太迟），spawn 失败用 `staged.cancel()` 撤回；mode 在子代理首次 pre-step **之前**重组合（`presets.recompose`），effort 在子代理**每个** `agent/request` 上钉住，sandbox 以 `sandbox/mode` 事件在首步前落日志（`subagent-policy.mjs:226-262, 314-333`）。
 - **边界与失败**：
-  - 不在会话内 → `ok: false`（`modsub.mjs:58`）；`prompt` 为空 → `ok: false`（`modsub.mjs:60`）。
-  - 需审批但无审批服务 → `{"ok": false, "error": "this spawn escalates (…; …) but no approval service is mounted to confirm it"}`（`modsub.mjs:82`）。
+  - 不在会话内 → `ok: false`（`modsub.mjs:61`）；`prompt` 为空 → `ok: false`（`modsub.mjs:63`）。
+  - 显式 `reasoningEffort` 不被目标路由声明 → `{"ok": false, "error": "unsupported reasoningEffort \"...\" for <provider>/<model>; supported: ..."}`（共享库 `validateEffort`，`subagent-policy.mjs:150-164`；枚举不可得时放行，由宿主在请求时校验）。
+  - 需审批但无审批服务 → `{"ok": false, "error": "this spawn escalates (…; …) but no approval service is mounted to confirm it"}`（`modsub.mjs:96-98`）。
   - 能力面解析失败 → 保守审批（共享库）；模型未知系列（无法归类）同样按「系列变更」保守处理（`subagent-policy.mjs:117-119`）。
   - 仅换 provider 不触发审批；显式 model 等于父模型不触发审批（`subagent-policy.mjs:108`）。
 - **关联**：`model_list`（选 provider/model）；`modelroute.mjs`（子代理路由的隐式钳制与 plan 计费重写，`model_route_status` 可查）；`team_add_member`（同策略）；subflt 动态插件（子代理 report/settle 通道：报告在父忙时走 steer、同轮结算去重）；共享库 `lib/subagent-policy.mjs`。
@@ -545,7 +605,7 @@
 
 ## injector（运行时插件注入）
 
-**插件级说明**：在官方 bundle/repository 安装路径之外提供运行时插件管理层——把本地插件包 symlink 进 profile 的 hoisted `node_modules` 再 `loader.create`，不改 patch/package.json/bundles（`injector.mjs:6-12`）。注册表 `DSH_HOME/injector/registry.json`（`{version: 1, plugins: [{name, dir}]}`），所有读改写串行化 + 临时文件 rename 原子落盘（`injector.mjs:167-179`）。**重启自恢复**：监听首个 `agent/session-start`，对注册表里不在线的插件逐个重新 `inject` 并打印结果日志（`injector.mjs:317-343`）。安全细节：包名必须符合 npm 风格正则且不能逃逸 node_modules（`assertSafeName`/`nodeModulesTarget`，`injector.mjs:50-68`）；卸载只删 injector 自己的 symlink、绝不 `rm -rf` 真实依赖（`removeLinkOnly`，`injector.mjs:131-141`）。另注册 Web 路由 `GET/HEAD /dsh-forge/plugin-descriptions` 供插件管理器面板取各插件自描述（`injector.mjs:100-129`）。
+**插件级说明**：在官方 bundle/repository 安装路径之外提供运行时插件管理层——把本地插件包 symlink 进 profile 的 hoisted `node_modules` 再 `loader.create`，不改 patch/package.json/bundles（`injector.mjs:6-12`）。注册表 `DSH_HOME/injector/registry.json`（`{version: 1, plugins: [{name, dir}]}`），所有读改写串行化 + 临时文件 rename 原子落盘（`injector.mjs:167-179`）。**重启自恢复**：监听首个 `agent/session-start`，对注册表里不在线的插件逐个重新 `inject` 并打印结果日志（`injector.mjs:317-343`）。安全细节：包名必须符合 npm 风格正则且不能逃逸 node_modules（`assertSafeName`/`nodeModulesTarget`，`injector.mjs:50-68`）；卸载只删 injector 自己的 symlink、绝不 `rm -rf` 真实依赖（`removeLinkOnly`，`injector.mjs:131-141`）。另注册 Web 路由 `GET/HEAD /dsh-forge/plugin-descriptions` 供插件管理器面板取各插件自描述（`injector.mjs:100-129`）。**主会话守卫（安全评审 t7-H1）**：`dev_inject_plugin` / `dev_uninject_plugin` / `dev_reload_package` 三个管理工具仅主会话可用——按会话头 origin/parentSession 判定，子代理调用一律拒绝（`injector.mjs:152-160`）；只读工具（dev_injected_list / dev_plugin_status）不受限。
 
 ### dev_inject_plugin
 
@@ -553,7 +613,7 @@
 - **一句话用途**：把本地插件包运行时注入到正在运行的 web profile（无需重启，不改 patch/打包产物），Host 工具与客户端 UI 都生效。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 把本地插件包运行时注入到正在运行的 web profile（无需重启，不改 patch/打包产物）。`dir` 必须包含一个带 `name` 和 `dsh`/bundle 声明的 package.json；Host 工具和客户端 UI 都会生效。
+  > 把本地插件包运行时注入到正在运行的 web profile（无需重启，不改 patch/打包产物）。`dir` 必须包含一个带 `name` 和 `dsh`/bundle 声明的 package.json；Host 工具和客户端 UI 都会生效。仅主会话可用（子代理拒绝）。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
@@ -567,6 +627,7 @@
   - `loader.create({id: slug(name), name, config: {}})` 加载并构建 fiber；失败则回滚 symlink 并抛错（`injector.mjs:202-210`）。
   - 成功后在注册表去重追加 `{name, dir}` 并原子落盘（`injector.mjs:211-215`）。
 - **边界与失败**：
+  - 非主会话（子代理）调用 → `{"ok": false, "error": "restricted to the main session (subagents cannot manage plugin injection)"}`（`injector.mjs:282`）。
   - 空 dir → `{"ok": false, "error": "dir is required"}`（`injector.mjs:269`）。
   - 目录无 package.json / 无 name、非法包名（含 `..` 逃逸）→ `ok: false` + 对应错误。
   - loader.create 失败 → symlink 已回滚，返回 `ok: false`。
@@ -579,7 +640,7 @@
 - **一句话用途**：取消注入一个运行时注入的插件包：fiber 释放、symlink 移除、注册表条目删除，无需重启。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 取消注入一个运行时注入的插件包：fiber 被释放、符号链接移除、注册表条目删除。无需重启。
+  > 取消注入一个运行时注入的插件包：fiber 被释放、符号链接移除、注册表条目删除。无需重启。仅主会话可用（子代理拒绝）。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
@@ -592,6 +653,7 @@
   - `loader.remove(id)` 释放 fiber；条目已不存在（如恢复尚未执行）视为幂等成功（吞掉 `cannot resolve entry`，`injector.mjs:225-228`）。
   - 删 symlink（仅符号链接）、注册表过滤删除（`injector.mjs:229-236`）。
 - **边界与失败**：
+  - 非主会话（子代理）调用 → `{"ok": false, "error": "restricted to the main session (subagents cannot manage plugin injection)"}`（`injector.mjs:292`）。
   - 空 name → `ok: false`；注册表无匹配 → `{"ok": false, "error": "no injected plugin matches \"...\""}`（`injector.mjs:283`）。
   - loader.remove 或 unlink 失败不中断流程，收集进 `problems` 并返回 `ok: false`。
 - **关联**：`dev_inject_plugin`、`dev_plugin_status`。
@@ -615,7 +677,7 @@
 - **一句话用途**：重建一个注入的插件条目（释放 fiber + 重新导入）。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 重建一个注入的插件条目（释放 fiber + 重新导入）。注意：Node ESM 模块缓存尚未清除，因此编辑过的文件内容可能要到加载器清掉缓存后才生效。
+  > 重建一个注入的插件条目（释放 fiber + 重新导入）。注意：Node ESM 模块缓存尚未清除，因此编辑过的文件内容可能要到加载器清掉缓存后才生效。仅主会话可用（子代理拒绝）。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
@@ -625,6 +687,7 @@
 - **输出**：`{"ok": true, "name", "note": "re-created the entry; ESM module cache is NOT cleared yet"}`（`injector.mjs:244`）。
 - **语义**：`loader.remove(id)` 后立即 `loader.create({id, name, config: {}})`（`injector.mjs:240-244`）。
 - **边界与失败**：
+  - 非主会话（子代理）调用 → `{"ok": false, "error": "restricted to the main session (subagents cannot manage plugin injection)"}`（`injector.mjs:315`）。
   - 空 name → `ok: false`。
   - **不校验 name 是否在注册表**；条目不存在时 `loader.remove` 会抛错（与 uninject 不同，这里没有吞 `cannot resolve entry`）→ `ok: false`（待审校确认是否有意）。
   - Node ESM 模块缓存未清除：编辑过的文件内容可能要等加载器清缓存后才生效（note 原文）。
@@ -691,7 +754,7 @@
 
 ## sklui（skill 管理器面板宿主半部 · auto-plugins 动态插件）
 
-**插件级说明**：`auto-plugins.json` 中 `idPrefix: "sklui"` 的动态插件宿主半部。它**自己不持有状态**：只读工具（skill_list / skill_show）直连 `skills` 服务；管理工具（skill_add / disable / enable / remove）全部转发给宿主插件 skillmanager.mjs 提供的 `skillRegistry` 服务（单一 Map + 单一持久 store `DSH_HOME/skillmanager/registry.json`），工具与设置页 UI 共用一份注册表（hostCode L9-12, 74-102）。若 `skills` 服务缺失则只读工具不注册；若 `skillRegistry` 缺失则管理工具不注册。以下「管理工具的输出/失败」来自 skillregistry 的实现（skillmanager.mjs，文中注 `<skillmanager.mjs:N>`）。
+**插件级说明**：`auto-plugins.json` 中 `idPrefix: "sklui"` 的动态插件宿主半部。它**自己不持有状态**：只读工具（skill_list / skill_show）直连 `skills` 服务；管理工具（skill_add / disable / enable / remove）全部转发给宿主插件 skillmanager.mjs 提供的 `skillRegistry` 服务（单一 Map + 单一持久 store `DSH_HOME/skillmanager/registry.json`；服务面为 `state/add/disable/enable/remove/setInject`，面板切换 alwaysInject 的 RPC `skillui/setInject` 走 `setInject`，skillmanager.mjs:338-366），工具与设置页 UI 共用一份注册表（hostCode L9-12, 74-102）。若 `skills` 服务缺失则只读工具不注册；若 `skillRegistry` 缺失则管理工具不注册。**主会话守卫（安全评审 t7-H2）**：四个管理工具仅主会话可用（hostCode 的 `isMainSession` 按会话头 origin/parentSession 判定），只读工具不受限。以下「管理工具的输出/失败」来自 skillregistry 的实现（skillmanager.mjs，文中注 `<skillmanager.mjs:N>`）。
 
 ### skill_list
 
@@ -730,7 +793,7 @@
 - **一句话用途**：添加一个持久运行时技能（host/全局层），重启后仍保留。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 添加一个持久的运行时技能（host/全局层）。重启后仍保留。
+  > 添加一个持久的运行时技能（host/全局层）。重启后仍保留。仅主会话可用（子代理拒绝）。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
@@ -748,6 +811,7 @@
   - 转发 `registry.add(args)`（hostCode L86）。skillmanager 侧：`skills.register` 运行时注册 + 持久 store 追加 + `persist()` 原子落盘（skillmanager.mjs:245-281）。
   - `alwaysInject: true` 时额外注册系统提示词 section（名 `forge-always-skill:<name>`、order 90、带 `<!-- forge-always-skill:<name> -->` 标记，供 router-standard 预设首轮抑制），失败仅记日志不影响添加（skillmanager.mjs:218-225, 266-268）。
 - **边界与失败**（均来自 skillmanager.mjs 的 addSkill）：
+  - 非主会话（子代理）调用 → `{"ok": false, "error": "restricted to the main session (subagents cannot manage skills)"}`（sklui hostCode 的 isMainSession 守卫）。
   - 非法名字 → `{"ok": false, "error": "invalid skill name \"...\""}`（skillmanager.mjs:247）。
   - **已被 skillmanager 托管** → `{"ok": false, "error": "skill \"...\" is already managed by skillmanager"}`（skillmanager.mjs:248）。
   - description 或 content 为空 → `{"ok": false, "error": "description and content are required"}`（skillmanager.mjs:251）。
@@ -759,7 +823,7 @@
 - **一句话用途**：禁用本管理器添加的一个技能（释放注册；可恢复）。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 禁用本管理器添加的一个技能（释放；可用 skill_enable 恢复）。
+  > 禁用本管理器添加的一个技能（释放；可用 skill_enable 恢复）。仅主会话可用（子代理拒绝）。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
@@ -768,7 +832,7 @@
 
 - **输出**：`{"ok": true, "name", "enabled": false}`（skillmanager.mjs:297）。
 - **语义**：转发 `registry.disable`（hostCode L91）。skillmanager 侧：释放 skills 注册（dispose）、摘除 always-inject section、store 里 `enabled: false` 并持久化（skillmanager.mjs:283-298）。
-- **边界与失败**：**非 skillmanager 托管的技能（preset/插件提供的）** → `{"ok": false, "error": "skill \"...\" is not managed by skillmanager"}`（skillmanager.mjs:285）——即「只读可见、不可增删启停」。
+- **边界与失败**：非主会话（子代理）调用 → `{"ok": false, "error": "restricted to the main session (subagents cannot manage skills)"}`；**非 skillmanager 托管的技能（preset/插件提供的）** → `{"ok": false, "error": "skill \"...\" is not managed by skillmanager"}`（skillmanager.mjs:285）——即「只读可见、不可增删启停」。
 - **关联**：`skill_enable`、`skill_remove`。
 
 ### skill_enable
@@ -777,7 +841,7 @@
 - **一句话用途**：重新启用本管理器先前禁用的技能。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 重新启用本管理器先前禁用的技能。
+  > 重新启用本管理器先前禁用的技能。仅主会话可用（子代理拒绝）。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
@@ -786,7 +850,7 @@
 
 - **输出**：`{"ok": true, "name", "enabled": true}`（skillmanager.mjs:316）。
 - **语义**：转发 `registry.enable`（hostCode L96）。skillmanager 侧：重新 `skills.register`（保留原注册描述），`alwaysInject` 且 section 缺失时重建，store 置 `enabled: true` 并持久化（skillmanager.mjs:300-317）。
-- **边界与失败**：非托管技能 → `{"ok": false, "error": "skill \"...\" is not managed by skillmanager"}`（skillmanager.mjs:302）。
+- **边界与失败**：非主会话（子代理）调用 → `{"ok": false, "error": "restricted to the main session (subagents cannot manage skills)"}`；非托管技能 → `{"ok": false, "error": "skill \"...\" is not managed by skillmanager"}`（skillmanager.mjs:302）。
 - **关联**：`skill_disable`。
 
 ### skill_remove
@@ -795,7 +859,7 @@
 - **一句话用途**：永久移除本管理器添加的一个技能（释放 + 从存储删除）。
 
 - **工具提示词（模型可见的 description，原文）**：
-  > 永久移除本管理器添加的一个技能（释放 + 从存储中删除）。
+  > 永久移除本管理器添加的一个技能（释放 + 从存储中删除）。仅主会话可用（子代理拒绝）。
 - **参数**：
 
   | 参数名 | 类型 | 必填 | 默认 | 说明 |
@@ -804,7 +868,7 @@
 
 - **输出**：`{"ok": true, "name", "removed": true}`（skillmanager.mjs:332）。
 - **语义**：转发 `registry.remove`（hostCode L101）。skillmanager 侧：释放注册与 always-inject section、从 owned Map 与 store 中删除、持久化（skillmanager.mjs:319-333）。
-- **边界与失败**：非托管技能 → `{"ok": false, "error": "skill \"...\" is not managed by skillmanager"}`（skillmanager.mjs:321）。
+- **边界与失败**：非主会话（子代理）调用 → `{"ok": false, "error": "restricted to the main session (subagents cannot manage skills)"}`；非托管技能 → `{"ok": false, "error": "skill \"...\" is not managed by skillmanager"}`（skillmanager.mjs:321）。
 - **关联**：`skill_add`、`skill_disable`。
 
 ---
@@ -872,7 +936,7 @@
 
 ## 共享库：lib/subagent-policy.mjs（提权审批与子代理注入核心）
 
-**用途**：一处实现供所有委托面（`spawn_model_subagent`、`switch_mode`、`team_add_member`）共用：preset 能力面比对、模型系列/档位分类、提权清单收集、子代理侧 mode/effort 注入。**没有硬编码的权限阶梯**——能力面就是 preset 组合的插件行集合（`subagent-policy.mjs:3-11`）。
+**用途**：一处实现供所有委托面（`spawn_model_subagent`、`switch_mode`、`team_add_member`）共用：preset 能力面比对、模型系列/档位分类、提权清单收集（模型 / 能力面 / sandbox）、显式 effort 校验、子代理侧 mode/effort/sandbox 注入。**没有硬编码的权限阶梯**——能力面就是 preset 组合的插件行集合（`subagent-policy.mjs:3-11`）。
 
 ### 能力面判定：rowNamesOf
 
@@ -880,21 +944,28 @@
 - 递归收集所有 `name` 字段：数组逐项展开；`group: true` 的节点（cordis:group）只递归展开其 `config` 数组、自身不产生名字；普通对象收集自己的 `name` 并递归所有值；最后 Set 去重（`subagent-policy.mjs:26-45`）。
 - 解析失败返回 `null`——调用方把它当作**能力面未知**处理。
 
-### 提权三条件
+### 提权四条件
 
 1. **模型档位升级**（`collectModelEscalations`，`subagent-policy.mjs:107-121`）：父、子模型同系列且子档位下标更高 → `model tier upgrade`。系列表（`subagent-policy.mjs:73-78`，与 modelroute 内置表一致）：deepseek `[flash, lite, pro, max]`、claude `[haiku, sonnet, opus]`、chatgpt `[mini, lite, pro, max]`、qwen `[flash, lite, plus, max]`；档位按 id 里关键词子串匹配，未命中档位返回 `-1`。
 2. **跨系列换模型**：两模型系列不同（含一方无法归类为 null）→ `model series change`（不同厂商家族，计费语义未知）——未知系列也按提权处理（保守）。
 3. **能力面超集**（`collectPresetEscalations`，`subagent-policy.mjs:55-70`）：读两个 preset 文本 → 行名集合求差（`addedRows`），目标行名不是当前子集即提权。任一 preset 读不到/解析失败 → 返回「preset capability face unknown (a composition could not be parsed); treated as an upgrade」——**解析失败 → 保守审批**。
    - 空集或「目标行 ⊆ 当前行」→ 不审批；parentPreset/targetPreset/presets 任一缺失或两者相同 → 不审批。
+4. **sandbox 拓宽**（`collectSandboxEscalations`，`subagent-policy.mjs:134-144`）：档位枚举 `SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access']`；显式子 sandbox 档位高于父级有效模式（`sandboxPolicy.overrideOf(session)`，缺省回退部署默认）→ `sandbox upgrade: <父> -> <子>`。**未知 sandbox 值同样进审批**（'unknown sandbox mode "…"; supported: …'）；子未显式指定则不触发。
 
-### 子代理侧 mode / effort 注入：installChildPolicy
+### 显式 effort 校验：validateEffort
 
-- `register(childId, {mode?, effort?})` 按会话 id 登记待注入项（`subagent-policy.mjs:191-195`）。
-- `agent/created` 时（`subagent-policy.mjs:135-176`）：
-  - **mode**：一次性 `agent/pre-step` 前置监听，在子代理**首次提示词组装之前**执行 `presets.recompose(agent.ctx, modeId)`，并 best-effort 追加 `agent-preset/selected` 事件；recompose 失败只记日志、流程照常继续（`subagent-policy.mjs:140-158`）。
-  - **effort**：`agent/request` 前置监听，把解析结果里的 `reasoningEffort` 在**每个**请求上钉为指定值（已相等则不动；注入异常时返回原解析结果，`subagent-policy.mjs:160-175`）。
-- `agent/disposed` 时清理两个监听器（`subagent-policy.mjs:178-189`）。
-- `liveRoute(parent)`（`subagent-policy.mjs:196-203`）：取父 `requestHeader().config` 的 `{provider, model, reasoningEffort}`，否则取父创建选项——是 `spawn_model_subagent` / `team_add_member` 判定「父当前路由」的依据。
+- `validateEffort(llm, provider, model, effort)`（`subagent-policy.mjs:150-164`）：经 `llm.resolveModelInfo` 取目标路由声明的 effort 枚举，显式值不在枚举内直接 fail-loud——`unsupported reasoningEffort "…" for <provider>/<model>; supported: …`；枚举不可得（llm 服务缺失 / 路由未声明 / 查询异常）则放行并注明由宿主在请求时校验。spawn 与 team_add_member 均在收集提权**之前**调用——非法 effort 不再表现为子代理静默无输出。
+
+### 子代理侧 mode / effort / sandbox 注入：installChildPolicy
+
+- **时序契约**：`startContinuable` 在 resolve 前**同步**分发 `agent/created`，spawn 之后再登记永远太迟——调用方必须在 spawn **之前**调 `prepare({parentId, mode?, effort?, sandbox?})` 预登记；条目按父会话 id 进 FIFO 队列（`stagedByParent`），`agent/created` 时消费一个槽位；spawn 失败用返回句柄的 `staged.cancel()` 撤回（`subagent-policy.mjs:226-245, 314-333`）。`register(childId, {mode?, effort?})` 保留为兼容入口：子代理已在线则直接装钩子，否则按会话 id 落待注入表（`subagent-policy.mjs:335-344`）。
+- `agent/created` 时（`subagent-policy.mjs:226-299`）：
+  - **mode**：一次性 `agent/pre-step` 前置监听，在子代理**首次提示词组装之前**执行 `presets.recompose(agent.ctx, modeId)`，并 best-effort 追加 `agent-preset/selected` 事件；recompose 失败只记日志、流程照常继续。
+  - **effort**：`agent/request` 前置监听，把解析结果里的 `reasoningEffort` 在**每个**请求上钉为指定值（已相等则不动；注入异常时返回原解析结果）。
+  - **sandbox**：显式沙箱在首步前向会话日志追加 `sandbox/mode` 事件，使子代理每次受限调用都折叠进所请求的模式（`subagent-policy.mjs:258-262`）。
+  - **日志纠偏**：未显式指定 mode 的子代理冷启动恢复时，在首个 pre-step 内读持久日志里最近一次 `agent-preset/selected`，与当前组合不一致则 recompose 回**日志记录的模式**——修复离线期间延迟切换（或既有 switch_mode 记录）被父组合静默还原的问题（`subagent-policy.mjs:271-298`）。
+- `agent/disposed` 时清理两类监听器（`subagent-policy.mjs:301-312`）。
+- `liveRoute(parent)`（`subagent-policy.mjs:345-352`）：取父 `requestHeader().config` 的 `{provider, model, reasoningEffort}`，否则取父创建选项——是 `spawn_model_subagent` / `team_add_member` 判定「父当前路由」的依据。
 
 ### 与 modelroute 的 taxonomy 关系（待审校确认）
 

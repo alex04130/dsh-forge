@@ -3,7 +3,7 @@
 > 状态说明：**Linux/WSL 路径已实测通过**；**Windows 与 macOS 尚未在实机上验证**——代码层已按平台差异处理（DSH_HOME 运行时派生、pwsh 安全引用、win32 junction 回退、curl.exe 分支），但以下清单需在对应实机/CI 上跑通后方可宣称全平台可用。
 
 ## 0. 前置（三平台通用）
-- Node ≥ 22、git、pnpm（npm 路径用；Windows 用原生 pnpm，勿用 WSL shim）
+- Node ≥ 22、git、pnpm。官方 dsh CLI 不自带 pnpm：`dsh plugin add` 是把参数转发给 profile 目录中的 pnpm 执行——npm 安装路径要求本机 PATH 上已装 pnpm（Windows 用原生 pnpm，勿用 WSL shim）；源码安装路径（install.mjs）纯本地拷贝，不依赖 pnpm。
 - 路径派生探针：
   node -e "console.log(process.env.DSH_HOME || require('path').join(require('os').homedir(), '.dsh'))"
   Windows 应输出 C:\Users\<你>\.dsh；macOS /Users/<你>/.dsh；Linux /home/<你>/.dsh
@@ -30,7 +30,7 @@
 ## 4. 每平台验收清单
 - [ ] DSH_HOME 探针输出本平台正确路径
 - [ ] 安装落点正确（无相对路径 .dsh 泄漏）
-- [ ] grep -rn "/home/alex" ~/.dsh/profiles/web/ 零命中
+- [ ] 硬编码旧路径零命中：Linux/macOS `grep -rn "/home/alex" ~/.dsh/profiles/web/`；Windows pwsh 等价 `Get-ChildItem -Recurse ~/.dsh/profiles/web/ | Select-String "/home/alex"`（按平台改查对应旧路径）
 - [ ] dsh web boot 日志零 error
 - [ ] 工具目录齐全（skill_list/session_find/team_*/spawn_model_subagent/dev_plugin_status）
 - [ ] 浏览器侧栏「插件/市场/技能/设置」全渲染
