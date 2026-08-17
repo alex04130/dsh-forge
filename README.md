@@ -102,6 +102,13 @@ Windows / macOS / Linux 全平台可用：
 - **teamhub**：队长代认领的任务，成员本人无法 update（assignee 记录 memberId、鉴权用 sessionId）；`team_create` / `team_add_member` 的审批等待会串行阻塞其他 `team_*` 调用（P1 顺延项）。
 - **市场安装的插件以宿主进程权限执行**（与 `dsh plugin add` 同样无沙箱隔离）——只安装审查过来源的仓库；面板内已有警示横幅。
 
+## 对插件开发者的告诫
+
+- **禁止经常变化的整体注入**：不要做"每次变更都整体注入"的设计——注入内容随会话累积只增不减，context 单调膨胀，token 成本与噪声持续上升。只注入增量或一次性快照。
+- **避免中途 surface replace**：运行中途整体替换 surface（界面/渲染层）会让此前构建的前缀缓存全部失效，性能断崖。需更换表面时尽早替换，或做增量补丁。
+
+（完整版与协作约定见 [CONTRIBUTING.md](CONTRIBUTING.md#对插件开发者的告诫上游审计教训)。）
+
 ## 故障排查
 
 - **装完没生效**：host 插件、preset、动态清单的改动都要重启 DSH（`dsh web`）才生效；npm 包装完同样需重启。
