@@ -1,5 +1,7 @@
 # dsh-forge · DSH 锻造台
 
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+
 > DeepSeek Harness 的运行时扩展套件：像 Minecraft 的 Forge 一样，为 DSH 锻造、安装、路由、编排插件。
 > A runtime extension suite for DeepSeek Harness — forge, install, route and orchestrate plugins the Forge way.
 
