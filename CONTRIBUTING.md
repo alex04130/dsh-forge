@@ -35,6 +35,13 @@
 - cordis.patch.yml 插件、preset .mjs、auto-plugins.json 的改动需重启 DSH 生效；动态插件热更新需 `dev_stop_dyn_plugin <prefix>` 停旧实例（dynboot define 是一次性快照）。
 - 侧栏 UI：禁止在 React 插槽里搬 DOM（insertBefore 会拖垮 sidebar slot）；用纯 CSS `[class$="_footerActions"] { flex-direction: column }`。
 
+## 对插件开发者的告诫（上游审计教训）
+
+插件设计中避免以下两种反模式（源自 harness 上游反馈审计，详见 `docs/` 与上游讨论素材）：
+
+- **禁止经常变化的整体注入**：不要做"每次变更都整体注入"的设计——注入内容随会话累积只增不减，context 单调膨胀，token 成本与噪声持续上升。只注入增量或一次性快照。
+- **避免中途 surface replace**：运行中途整体替换 surface（界面/渲染层）会让此前构建的前缀缓存全部失效，性能断崖。需更换表面时尽早替换，或做增量补丁。
+
 ## 运行时与仓库的有意差异（LOCAL-ONLY 块）
 
 - `profiles/web/cordis.patch.yml`（运行时）与 `bundle/cordis.patch.yml`（仓库）存在一条**有意为之**的差异：运行时文件末尾有 `LOCAL-ONLY personal integration` 注释块（mcp-github 行），是维护者本机的私人集成——**永远不要镜像进仓库**，也不要写进 bundle/cordis.npm.yml。
