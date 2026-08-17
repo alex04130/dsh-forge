@@ -472,7 +472,8 @@ export default {
           if (h === undefined) { results.push({ sessionId: id, ok: false, error: 'unknown session id' }); continue }
           const isSub = isSubHeader(h)
           if (isSub) {
-            if (!own.has(id)) { results.push({ sessionId: id, ok: false, error: 'only sub sessions of your own master session can be unarchived here' }); continue }
+            // UI 路径（allowMain=true）：用户经弹窗确认，可捞回任意已归档会话（含他主下辖的子会话）
+            if (allowMain !== true && !own.has(id)) { results.push({ sessionId: id, ok: false, error: 'only sub sessions of your own master session can be unarchived here' }); continue }
           } else if (allowMain !== true) {
             results.push({ sessionId: id, ok: false, error: 'main sessions cannot be unarchived through this path; use the UI' })
             continue
@@ -511,7 +512,7 @@ export default {
       // 删除（仅 UI RPC 路径，模型无工具）。主代理递归删除整个子树；live 检查；mailbox 清理；记账摘除。
       // R2 防复活（审计新发现）：刚结束会话的 write-behind 批次可能经 materialize() 重建目录——
       // 删后复查重试，另有 30s 冷静期（lastPromptAt 距现在过近直接拒绝）。
-      async deleteSessions(sessionIds, callerId, confirm) {
+      async deleteSessions(sessionIds, callerId, confirm, uiPath) {
         if (confirm !== true) throw new Error('refusing to delete: confirm must be explicitly true. 删除是不可逆的——会话日志文件会被真正删除，删除后什么都不剩。')
         const { byId, descendantsOf } = await headerIndex()
         const dirIndex = await buildSessionDirIndex()
@@ -538,9 +539,12 @@ export default {
           if (h === undefined) { results.push({ sessionId: id, ok: false, error: 'unknown session id' }); continue }
           const isSub = isSubHeader(h)
           if (isSub) {
-            const callerRoot = typeof callerH !== 'undefined' && isSubHeader(callerH) ? (typeof callerH.parentSession === 'string' ? callerH.parentSession : undefined) : callerId
-            const own = typeof callerRoot === 'string' ? descendantsOf(callerRoot) : new Set()
-            if (!own.has(id)) { results.push({ sessionId: id, ok: false, error: 'only sub sessions of your own master session can be deleted' }); continue }
+            // UI 路径（uiPath=true）：用户经弹窗确认，可删任意非自身会话（含他主下辖的子会话）
+            if (uiPath !== true) {
+              const callerRoot = typeof callerH !== 'undefined' && isSubHeader(callerH) ? (typeof callerH.parentSession === 'string' ? callerH.parentSession : undefined) : callerId
+              const own = typeof callerRoot === 'string' ? descendantsOf(callerRoot) : new Set()
+              if (!own.has(id)) { results.push({ sessionId: id, ok: false, error: 'only sub sessions of your own master session can be deleted' }); continue }
+            }
           }
           const subtree = new Set([id, ...descendantsOf(id)])
           const liveIds = []
@@ -636,7 +640,7 @@ export default {
       },
 
       // 删除预演（只读，供 UI 弹窗显示实数：subtreeSize/liveIds）
-      async deletePreview(sessionIds, callerId) {
+      async deletePreview(sessionIds, callerId, uiPath) {
         const { byId, descendantsOf } = await headerIndex()
         const callerH = byId.get(callerId)
         if (callerH !== undefined && isSubHeader(callerH)) throw new Error('deletion is restricted to main sessions (a subagent page cannot delete sessions)')
@@ -647,9 +651,11 @@ export default {
           if (h === undefined) { results.push({ sessionId: id, ok: false, error: 'unknown session id' }); continue }
           const isSub = isSubHeader(h)
           if (isSub) {
-            const callerRoot = typeof callerH !== 'undefined' && isSubHeader(callerH) ? (typeof callerH.parentSession === 'string' ? callerH.parentSession : undefined) : callerId
-            const own = typeof callerRoot === 'string' ? descendantsOf(callerRoot) : new Set()
-            if (!own.has(id)) { results.push({ sessionId: id, ok: false, error: 'only sub sessions of your own master session can be deleted' }); continue }
+            if (uiPath !== true) {
+              const callerRoot = typeof callerH !== 'undefined' && isSubHeader(callerH) ? (typeof callerH.parentSession === 'string' ? callerH.parentSession : undefined) : callerId
+              const own = typeof callerRoot === 'string' ? descendantsOf(callerRoot) : new Set()
+              if (!own.has(id)) { results.push({ sessionId: id, ok: false, error: 'only sub sessions of your own master session can be deleted' }); continue }
+            }
           }
           const subtree = new Set([id, ...descendantsOf(id)])
           const liveIds = []
