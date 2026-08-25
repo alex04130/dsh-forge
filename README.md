@@ -133,6 +133,9 @@ Windows / macOS / Linux 全平台可用：
 | **skillmanager + sklui**（技能管理） | `skill_list` / `skill_show` / `skill_add` / `skill_disable` / `skill_enable` / `skill_remove`（持久技能，支持默认注入 / 渐进式披露） |
 | **plins**（插件市场） | `dev_stop_dyn_plugin`（按前缀紧急停动态插件）；另有市场面板 RPC（browse / installed / install / uninstall） |
 | **sfind** | `session_find`（按 id/标题关键字查会话，省上下文） |
+| **archive**（项目档案 v0） | `archive_read_event`（证据句柄 sessionId:seq 精确读取 + 上下文窗口）、`archive_list_events`（事件索引）、`archive_filter_events`（类型/关键字过滤）、`archive_trace`（会话血缘追踪） |
+| **verify**（言行一致检查器 v0） | `verify_claim`（git-commit / file / text-in-file 三类型显式验货，evidence 带原文供独立复核） |
+| **plasmid**（最薄质粒 v0） | `plasmid_submit`（四道闸自荐）、`plasmid_search`（拉取制+适应度）、`plasmid_get`（全文）、`plasmid_report`（fitness 反馈）、`gap_report`（缺口报告，outlet 三选一） |
 
 ## 截图
 

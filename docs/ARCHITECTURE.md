@@ -104,16 +104,28 @@ preset 的 `.mjs` 相对行从**用户主目录**解析裸 specifier，所以 `@
 
 **升级时的存活清单**：`~/.dsh/profiles/web/cordis.patch.yml`、`~/.dsh/auto-plugins.json`、`~/.dsh/.agent-presets/**`、`~/.dsh/injector/registry.json`、`~/.dsh/skillmanager/registry.json` 都在用户主目录，npm 升级**不碰**。唯一要担心的是我们依赖的 npm 内部行为（上面表格）被上游改动。
 
+### 5.1 上游 API 缺口（sessionmgmt 兼容面，绕法在 ~/.dsh 用户层）
+
+mailbridge 的 `sessionmgmt` 服务（归档/删除/导出）绕开的上游缺口（详见 `~/.dsh/dsh-issue/upstream-additions.md` 与官方反馈清单）：
+
+| 上游缺口 | 我们侧绕法 |
+|---|---|
+| 无 unarchive API（只有归档路径） | 会话目录 `meta.json` 为归档真相源 + 上游 `archivedSessionIds` 镜像双写；启动 3s 反向对账修复；上游 unarchive 缺口经 `enqueueOperation`+`setState` 摘除 |
+| 无会话删除 API | 递归子树删除（parentSession 闭包）+ live 检查 + 30s 冷静期 + 删后 1.2s×3 复查重试；删除仅 UI RPC（无模型工具），confirm 强校验 |
+| `harness.handle` RPC handler 无调用方会话上下文 | `callerSessionId` 伪造面插件层无解——UI 弹窗 confirm + host delete fail-closed（`masterIdFromSessionId` 缺失即拒）兜底；建议官方给 RPC 增加会话绑定上下文 |
+| `projcache` 行不随外部删目录清理 | 我们侧不改写上游投影领地文件（v1 接受残留）；建议上游删除/归档时同步清理 |
+| `sessionPersistence.list` 性能/语义 | session_list 走 backend 直读（不经 `waitForRetirement`）以免疫退休窗口读失败 |
+
 ## 6. 已实现清单
 
-### Host 插件（`profiles/web/cordis.patch.yml`，12 行）
-mailbridge（跨会话）、llmrouter（模型委派）、modeswitch（切 preset）、teamhub（团队）、modsub（指定模型子代理）、**injector**（运行时注入）、**skillmanager**（skill 管理）、**modelroute**（模型路由策略）、dynboot（动态插件恢复）、imgsub-bridge、@local/dsh-dynrestore、@local/dsh-plugmgr。
+### Host 插件（`profiles/web/cordis.patch.yml`，15 行）
+mailbridge（跨会话）、llmrouter（模型委派）、modeswitch（切 preset）、teamhub（团队）、modsub（指定模型子代理）、**injector**（运行时注入）、**skillmanager**（skill 管理）、**modelroute**（模型路由策略）、dynboot（动态插件恢复）、imgsub-bridge、@local/dsh-dynrestore、@local/dsh-plugmgr、**archive**（项目档案 v0：证据句柄只读读取，#67）、**verify**（言行一致检查器 v0：verify_claim 显式验货，#68）、**plasmid**（最薄质粒 v0：修复经验注册表 + gap_report，#69/#70）。
 
 ### Preset
 `.agent-presets/router-standard/`：agent.cordis.yml + router-bootstrap.mjs + router-core.mjs（改编自 dsh-router-standard / dsh-anchored-standard，MIT，见 NOTICE）。
 
-### 动态插件（`auto-plugins.json`，共 10 条）
-gitdk（disabled）、modpk（模式下拉框）、modlpk（模型+等级选择器）、imgsub（子代理图片客户端补丁）、**sklui**（skill 管理器：6 个模型工具 + `skillui/*` RPC + 侧栏设置面板；持久化经 `skillRegistry` 服务桥转发到 skillmanager.mjs）、**plins**（插件市场：`plinst/*` RPC + `dev_stop_dyn_plugin` 应急停止工具）、**sfind**（`session_find` 会话查找工具）、**subflt**（子代理 report/结算通道：reportFrom 包 steer + 同轮结算去重；过渡补丁，终态见 docs/SUBAGENT-PROVIDER.md）、**stfx**（侧栏 Settings 行对齐 + cordis 面板锚定）、**steer**（子代理会话 Ctrl+Enter 插话，host 直发 `agent.steer`）。
+### 动态插件（`auto-plugins.json`，共 11 条）
+gitdk（disabled）、modpk（模式下拉框）、modlpk（模型+等级选择器）、imgsub（子代理图片客户端补丁）、**sklui**（skill 管理器：6 个模型工具 + `skillui/*` RPC + 侧栏设置面板；持久化经 `skillRegistry` 服务桥转发到 skillmanager.mjs）、**plins**（插件市场：`plinst/*` RPC + `dev_stop_dyn_plugin` 应急停止工具）、**sfind**（`session_find` 会话查找工具）、**subflt**（子代理 report/结算通道：reportFrom 包 steer + 同轮结算去重；过渡补丁，终态见 docs/SUBAGENT-PROVIDER.md）、**stfx**（侧栏 Settings 行对齐 + cordis 面板锚定）、**steer**（子代理会话 Ctrl+Enter 插话，host 直发 `agent.steer`）、**sesmgr**（子会话管理面板：三分区目录 + 侧栏 Archived 浮层 + 删除弹窗；host 薄委托 mailbridge 的 sessionmgmt 服务，#64→#66 i18n/v8）。
 
 ### 客户端面板（UI 层）
 - `@local/dsh-plugmgr`（插件市场）：**自主发现**——host/注入/官方三类经 `remote.pluginInventory.list()`（loader 条目：`entryId/moduleName/enabled/fiberPhase`）按模块名前缀分类（`./`、`@local/` = 本地；`@deepseek-ai/`、`cordis:` = 官方；其余 = 注入），不再硬编码。

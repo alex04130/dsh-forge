@@ -21,6 +21,15 @@
 - Conventional Commits 中文消息：`类型(范围): 摘要` + 分条正文（逐文件/逐特性列出），类型如 `feat` / `fix` / `docs` / `chore` / `sync`。
 - 推送前确认工作区状态，push 用 ed25519 key（`GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes'`）。
 
+## 文档同步（每次落地必带）
+
+- **代码进仓库，文档必须同 commit**（或同清单内显式标注 docs 影响与排期）。这是硬纪律：新插件/新工具/服务变更/配置形态变化，落地时同步核对以下三处：
+  1. `README.md` 工具定义表（按插件分组列工具）
+  2. `docs/tools-reference.zh.md`（逐工具详细定义；头部"权威源"清单同步加文件）
+  3. `docs/ARCHITECTURE.md`（§5.1 上游缺口与兼容面、§6 已实现清单的插件数量与列表）
+- docs-only 改动（如修订说明）无需动代码，但与代码行为相关的文档变化不允许滞后一个 commit。
+- 落地前自查：`grep` 新工具名是否已在上述文档出现；缺失则本次 commit 一并补上（commit message 标注 `docs:` 段）。
+
 ## 分支工作流（版本管理）
 
 - `master` 为稳定发布分支；`dev` 为功能验证分支。
