@@ -322,7 +322,13 @@ export function searchPlasmids(args, reg) {
   })
   const qTokens = tokensOf(query)
   const scored = pool.map((e) => {
-    const blob = `${e.when}\n${e.worked}\n${e.failed}\n${e.why}\n${e.type} ${e.scope}`.toLowerCase()
+    // fix 用 when/worked/failed/why；gap 用 what/why/impact（k3 实证：gap 的 what 不在旧
+    // blob 里，按 what 内容搜不中；why 碰巧含词才会误命中）
+    const parts = e.type === 'gap'
+      ? [e.what ?? '', e.why ?? '', e.impact ?? '']
+      : [e.when ?? '', e.worked ?? '', e.failed ?? '', e.why ?? '']
+    parts.push(`${e.type} ${e.scope}`)
+    const blob = parts.join('\n').toLowerCase()
     let matched = 0
     for (const t of qTokens) if (blob.includes(t)) matched++
     const ratio = qTokens.length === 0 ? 1 : matched / qTokens.length
