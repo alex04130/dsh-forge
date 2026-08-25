@@ -45,19 +45,30 @@ export async function saveRegistry(file, data) {
 }
 
 // ── id 与文本工具 ──────────────────────────────────────────────────────────
+// 质粒 P-xxx 与缺口报告 G-xxx 各自独立计数（注册表共用一个文件，前缀区分）。
 export function nextId(entries, seed = 'P-001') {
+  const prefix = /^([PG])-/.exec(seed)?.[1] ?? 'P'
   let max = -1
   for (const e of Array.isArray(entries) ? entries : []) {
-    const m = /^P-0?(\d+)$/.exec(typeof e?.id === 'string' ? e.id : '')
+    const m = new RegExp(`^${prefix}-0?(\\d+)$`).exec(typeof e?.id === 'string' ? e.id : '')
     if (m !== null) { const n = Number(m[1]); if (n > max) max = n }
   }
-  const base = /^P-0?(\d+)$/.exec(seed)
+  const base = /^[PG]-0?(\d+)$/.exec(seed)
   const n = max >= 0 ? max + 1 : (base !== null ? Number(base[1]) : 1)
-  return `P-${String(n).padStart(3, '0')}`
+  return `${prefix}-${String(n).padStart(3, '0')}`
 }
 export function tokensOf(text) {
-  const parts = String(text ?? '').toLowerCase().match(/[\p{L}\p{N}_]+/gu)
-  return parts === null ? [] : [...new Set(parts)]
+  const s = String(text ?? '').toLowerCase()
+  const out = []
+  let word = ''
+  const flush = () => { if (word !== '') { out.push(word); word = '' } }
+  for (const ch of s) {
+    if (/[\p{Script=Han}]/u.test(ch)) { flush(); out.push(ch) }
+    else if (/[\p{L}\p{N}_]/u.test(ch)) word += ch
+    else flush()
+  }
+  flush()
+  return [...new Set(out)]
 }
 export function similarity(a, b) {
   const ta = new Set(tokensOf(a))
@@ -72,12 +83,14 @@ function first(text, n) {
   return s.length > n ? s.slice(0, n) + '…' : s
 }
 export function summarize(e, relevance) {
+  const isGap = e?.type === 'gap'
   return {
     id: e.id, type: e.type, status: e.status, confidence: e.confidence, scope: e.scope, version: e.version,
-    when: first(e.when, 140), worked: first(e.worked, 140),
+    when: first(e.what || e.when, 140), worked: first(e.worked, 140),
     evidenceCount: Array.isArray(e.evidence) ? e.evidence.length : 0,
     fitness: { score: e.fitness?.score ?? 0.5, seen: e.fitness?.seen ?? 0, worked: e.fitness?.worked ?? 0, failed: e.fitness?.failed ?? 0 },
     createdAt: e.createdAt, updatedAt: e.updatedAt, source: e.source,
+    ...(isGap ? { outlet: e.outlet ?? 'backlog' } : {}),
     ...(typeof relevance === 'number' ? { relevance } : {}),
   }
 }
@@ -173,6 +186,7 @@ export async function submitPlasmid(args, deps) {
     const blob = `${args.when}\n${args.worked}\n${args.failed}\n${args.why}`
     let best = null
     for (const e of reg.entries) {
+      if (e.type !== 'fix') continue
       const eb = `${e.when}\n${e.worked}\n${e.failed}\n${e.why}`
       const s = similarity(blob, eb)
       if (best === null || s > best.sim) best = { id: e.id, sim: s, when: e.when }
@@ -216,6 +230,82 @@ export async function submitPlasmid(args, deps) {
   }
   await saveRegistry(file, reg)
   return { accepted: true, id: entry.id, status: entry.status, version: entry.version, updated: updateOf !== '' }
+}
+
+// ── 缺口报告（§5.12：与质粒共用管道/证据闸/查重/注册表）────────────────────
+// 缺口回答"这里少了个东西"，不改变行为，只进人待办。出口分流（§5.12 表）：
+//   缺工具 → 先查插件市场雷达（采用优先），查无此物才进开发 backlog
+//   流程可以更好 → 转方法质粒候选，走自荐制的闸
+//   协作怎么配合更合适 → 不进 backlog，直接喂评分系统和能力卡
+export function gateFormatGap(args) {
+  for (const k of ['what', 'why']) {
+    const v = String(args?.[k] ?? '').trim()
+    if (v.length === 0) return { ok: false, error: `${k} 必填且不能为空` }
+    if (v.length > 4000) return { ok: false, error: `${k} 超过 4000 字符（${v.length}）` }
+  }
+  if (typeof args.impact === 'string' && args.impact.length > 2000) return { ok: false, error: 'impact 超过 2000 字符' }
+  if (!Array.isArray(args.evidence) || args.evidence.length < 1 || args.evidence.length > 8) {
+    return { ok: false, error: 'evidence 必须是 1..8 个 <sessionId>:<seq> 证据句柄（必须引用档案里真实存在的事件）' }
+  }
+  for (const e of args.evidence) {
+    if (parseEvidenceHandle(e) === null) return { ok: false, error: `无效证据句柄：${JSON.stringify(e)}（应为 <sessionId>:<seq>）` }
+  }
+  if (args.outlet !== undefined && !['backlog', 'plasmid-candidate', 'scoring'].includes(args.outlet)) {
+    return { ok: false, error: `outlet 必须是 backlog|plasmid-candidate|scoring，收到 ${JSON.stringify(args.outlet)}` }
+  }
+  if (args.confidence !== undefined && !['high', 'medium', 'low'].includes(args.confidence)) {
+    return { ok: false, error: `confidence 必须是 high|medium|low，收到 ${JSON.stringify(args.confidence)}` }
+  }
+  if (typeof args.scope === 'string' && args.scope.length > 200) return { ok: false, error: 'scope 超过 200 字符' }
+  return { ok: true }
+}
+
+export async function submitGap(args, deps) {
+  const sessionQuery = deps.sessionQuery
+  const file = deps.registryPath
+  const source = typeof deps.source === 'string' && deps.source.length > 0 ? deps.source : 'unknown'
+  const fmt = gateFormatGap(args)
+  if (!fmt.ok) return { accepted: false, gate: 'format', error: fmt.error }
+  const ev = await gateEvidence(args.evidence, sessionQuery)
+  if (!ev.ok) {
+    return { accepted: false, gate: 'evidence', error: `证据闸不过：${ev.failures.map((f) => `${f.handle}: ${f.error}`).join('；')}。请用 archive_filter_events / archive_read_event 找到真实坐标再提交。` }
+  }
+  const sec = gateSecrets(args.what, args.why ?? '', args.impact ?? '', args.scope ?? '')
+  if (!sec.ok) return { accepted: false, gate: 'secret', error: `密钥闸不过：命中「${sec.matched}」。凭证不过质粒，请把具体值改写成方法描述再提交。` }
+
+  const reg = await loadRegistry(file)
+  const blob = `${args.what}\n${args.why ?? ''}\n${args.impact ?? ''}`
+  let best = null
+  for (const e of reg.entries) {
+    if (e.type !== 'gap') continue
+    const eb = `${e.what}\n${e.why ?? ''}\n${e.impact ?? ''}`
+    const s = similarity(blob, eb)
+    if (best === null || s > best.sim) best = { id: e.id, sim: s, what: e.what }
+  }
+  if (best !== null && best.sim >= 0.5) {
+    return {
+      accepted: false, gate: 'dedup',
+      existingId: best.id, similarity: +best.sim.toFixed(2), existingWhat: first(best.what, 140),
+      suggestion: '已有相似缺口报告，别开新条：若该缺口有进展（已建/已撤/已绕过），需要人工更新原条状态；若确实是不同缺口，请在文本里明确写出差异再重试。',
+    }
+  }
+
+  const entry = {
+    id: nextId(reg.entries, 'G-001'),
+    type: 'gap', status: 'open',
+    outlet: args.outlet ?? 'backlog',
+    confidence: args.confidence ?? 'medium',
+    scope: args.scope ?? 'project',
+    source,
+    version: 1,
+    what: args.what, why: args.why ?? '', impact: args.impact ?? '',
+    evidence: args.evidence,
+    createdAt: nowIso(), updatedAt: nowIso(),
+    fitness: { worked: 0, failed: 0, seen: 0, recent: [], score: 0.5 },
+  }
+  reg.entries.push(entry)
+  await saveRegistry(file, reg)
+  return { accepted: true, id: entry.id, type: 'gap', outlet: entry.outlet, status: entry.status }
 }
 
 export function searchPlasmids(args, reg) {
@@ -337,12 +427,12 @@ export default {
       })
 
     registerTool('plasmid_search',
-      '质粒检索（拉取制，dsh-forge §5.5/5.6）。遇到情况先查摘要和适用度，想要全文再用 plasmid_get 拉。返回排序后的摘要（id/状态/when/worked/fitness），默认按相关度+适用度。系统不主动推送质粒内容。',
+      '质粒/缺口检索（拉取制，dsh-forge §5.5/5.6）。遇到情况先查摘要和适用度，想要全文再用 plasmid_get 拉。返回排序后的摘要（id/状态/when 或 what/worked/fitness/outlet），默认按相关度+适用度。系统不主动推送内容。',
       {
         query: { type: 'string', description: '关键字（空格分词，全部命中才算高相关）。' },
-        type: { type: 'string', enum: ['fix'], description: '类型过滤（v0 只有 fix）。' },
+        type: { type: 'string', description: '类型过滤：fix（修复质粒）| gap（缺口报告）。缺省全查。' },
         scope: { type: 'string', description: '作用域过滤（如 "project"）。' },
-        status: { type: 'string', enum: ['active', 'idea'], description: '状态过滤。active=可用，idea=跌破适用度阈值的争议条。' },
+        status: { type: 'string', description: '状态过滤：active/idea（质粒）、open/adopted/rejected（缺口）。缺省全查。' },
         limit: { type: 'integer', description: '最多返回条数（默认 20，上限 100）。' },
       },
       async (args) => {
@@ -379,6 +469,23 @@ export default {
       },
       async (args) => {
         const out = await reportPlasmid(String(args.id ?? ''), String(args.outcome ?? ''), typeof args.note === 'string' ? args.note : undefined, registryPath)
+        return jsonText(out)
+      })
+
+    registerTool('gap_report',
+      '缺口报告（§5.12）：干活时"这里少了个东西"当场记下来进待办。与质粒共用证据闸/密钥闸/查重/注册表，只进人待办、不改变行为。出口分流三选一：缺工具→先查插件市场雷达（采用优先），查无此物才进开发 backlog；流程可以更好→转方法质粒候选，走自荐制的闸；协作怎么配合更合适→不进 backlog，直接喂评分系统和能力卡。evidence 必须引用档案里真实存在的事件坐标 <sessionId>:<seq>。删除/改状态只在人手里（本工具只能新增）。',
+      {
+        what: { type: 'string', required: true, description: '缺的是什么（一句话）。' },
+        why: { type: 'string', required: true, description: '为什么缺 / 缺了之后卡在哪。' },
+        impact: { type: 'string', description: '可选：影响面（谁/什么活被拖住）。' },
+        outlet: { type: 'string', enum: ['backlog', 'plasmid-candidate', 'scoring'], description: '出口：backlog（开发待办，默认）| plasmid-candidate（转方法质粒候选）| scoring（喂评分系统）。' },
+        evidence: { type: 'array', items: { type: 'string' }, required: true, description: '证据句柄列表（1..8），形如 "<sessionId>:<seq>"。' },
+        confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: '置信度。默认 medium。' },
+        scope: { type: 'string', description: '作用域说明（<=200 字）。默认 "project"。' },
+      },
+      async (args, exec) => {
+        const source = callerSession(exec)
+        const out = await submitGap(args, { sessionQuery, registryPath, source })
         return jsonText(out)
       })
 
