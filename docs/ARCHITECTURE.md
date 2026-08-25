@@ -124,8 +124,8 @@ mailbridge（跨会话）、llmrouter（模型委派）、modeswitch（切 prese
 ### Preset
 `.agent-presets/router-standard/`：agent.cordis.yml + router-bootstrap.mjs + router-core.mjs（改编自 dsh-router-standard / dsh-anchored-standard，MIT，见 NOTICE）。
 
-### 动态插件（`auto-plugins.json`，共 11 条）
-gitdk（disabled）、modpk（模式下拉框）、modlpk（模型+等级选择器）、imgsub（子代理图片客户端补丁）、**sklui**（skill 管理器：6 个模型工具 + `skillui/*` RPC + 侧栏设置面板；持久化经 `skillRegistry` 服务桥转发到 skillmanager.mjs）、**plins**（插件市场：`plinst/*` RPC + `dev_stop_dyn_plugin` 应急停止工具）、**sfind**（`session_find` 会话查找工具）、**subflt**（子代理 report/结算通道：reportFrom 包 steer + 同轮结算去重；过渡补丁，终态见 docs/SUBAGENT-PROVIDER.md）、**stfx**（侧栏 Settings 行对齐 + cordis 面板锚定）、**steer**（子代理会话 Ctrl+Enter 插话，host 直发 `agent.steer`）、**sesmgr**（子会话管理面板：三分区目录 + 侧栏 Archived 浮层 + 删除弹窗；host 薄委托 mailbridge 的 sessionmgmt 服务，#64→#66 i18n/v8）。
+### 动态插件（`auto-plugins.json`，共 12 条）
+gitdk（disabled）、modpk（模式下拉框）、modlpk（模型+等级选择器）、imgsub（子代理图片客户端补丁）、**sklui**（skill 管理器：6 个模型工具 + `skillui/*` RPC + 侧栏设置面板；持久化经 `skillRegistry` 服务桥转发到 skillmanager.mjs）、**plins**（插件市场：`plinst/*` RPC + `dev_stop_dyn_plugin` 应急停止工具）、**sfind**（`session_find` 会话查找工具）、**subflt**（子代理 report/结算通道：reportFrom 包 steer + 同轮结算去重；过渡补丁，终态见 docs/SUBAGENT-PROVIDER.md）、**stfx**（侧栏 Settings 行对齐 + cordis 面板锚定）、**steer**（子代理会话 Ctrl+Enter 插话，host 直发 `agent.steer`）、**sesmgr**（子会话管理面板：三分区目录 + 侧栏 Archived 浮层 + 删除弹窗；host 薄委托 mailbridge 的 sessionmgmt 服务，#64→#66 i18n/v8）、**plsm**（质粒面板 v0.1.1：只读展示，`plasmid.list/detail` 包私有 RPC，host 经 fs 直读 registry.json；`data-plsm-actions` 空槽预留 v0.2 写面，#71）。
 
 ### 客户端面板（UI 层）
 - `@local/dsh-plugmgr`（插件市场）：**自主发现**——host/注入/官方三类经 `remote.pluginInventory.list()`（loader 条目：`entryId/moduleName/enabled/fiberPhase`）按模块名前缀分类（`./`、`@local/` = 本地；`@deepseek-ai/`、`cordis:` = 官方；其余 = 注入），不再硬编码。
