@@ -13,22 +13,25 @@
   7. `~/.dsh/profiles/web/plugins/modelroute.mjs`
   8. `~/.dsh/profiles/web/plugins/lib/subagent-policy.mjs`（共享库：能力面判定 / 提权审批 / mode+effort 注入的行为核心）
   9. `~/.dsh/auto-plugins.json`（动态插件清单；`plugins[]` 中 `idPrefix` 为 `sklui` / `plins` / `sfind` 三条的 `hostCode` 字段）
-  10. 补充只读参考（非权威清单，仅用于确认语义要点 6 的报错行为）：`~/.dsh/profiles/web/plugins/skillmanager.mjs`（`skillRegistry` 服务的实现者）
+  10. `~/.dsh/profiles/web/plugins/archive.mjs`
+  11. `~/.dsh/profiles/web/plugins/verify.mjs`
+  12. `~/.dsh/profiles/web/plugins/plasmid.mjs`
+  13. 补充只读参考（非权威清单，仅用于确认语义要点 6 的报错行为）：`~/.dsh/profiles/web/plugins/skillmanager.mjs`（`skillRegistry` 服务的实现者）
 
 - **更新机制**：运行时侧改动经 dsh-forge「同步清单」（编号 #N 递增）同步到仓库时，必须同步更新本文件。改动运行时侧任何工具行为后，先跑一遍本文件对应小节，对不上的行号与语义以运行时代码为准改文档。
 - **行号约定**：文中括号注明源文件与行号（如 `(mailbridge.mjs:192)`），行号以本次生成时读取的文件为准；`auto-plugins.json` 的 `hostCode` 是 JSON 字符串，行号指该字符串按 `\n` 展开后的行号（即文中 `hostCode L41` 表示该插件 hostCode 内容的第 41 行）。
 - **标注约定**：凡代码行为与描述/预期不一致、或代码里没有依据的细节，一律标注「（待审校确认）」；不编造代码里没有的行为。
 - **通用约定（所有工具）**：
-  - 全部 34 个工具的输出都是**一个 pretty-print 的 JSON 字符串**（`jsonText` = `JSON.stringify(value, null, 2)`），不是结构化对象。
+  - 全部 44 个工具的输出都是**一个 pretty-print 的 JSON 字符串**（`jsonText` = `JSON.stringify(value, null, 2)`），不是结构化对象。
   - 每个工具都包了一层统一异常处理（各插件的 `registerTool` 包装或 `defineTool` 内的 try/catch）：`execute` 抛出的任何异常转为 `{"ok": false, "error": "<message>"}`。
-  - 除 `dev_inject_plugin` 外，各工具明确失败路径均返回 `ok: false` 并带 `error`（或 `cancelled`）字段，见各小节「边界与失败」。
-  - 注册形态分两种：composition 插件（mailbridge / llmrouter / teamhub / injector / modelroute / modsub / modeswitch）直接用 `defineTool` 注册；auto-plugins 三条动态插件用 `harness.defineTool` + `harness.registerTool(ctx, tool)` 注册（见附录）。
+  - 除 `dev_inject_plugin` 与 plasmid 系列（`plasmid_submit` / `gap_report` 的接受/拒绝形态用 `accepted` + `gate`、`plasmid_search` 无 `ok` 外壳，见 plasmid 一节）外，各工具明确失败路径均返回 `ok: false` 并带 `error`（或 `cancelled`）字段，见各小节「边界与失败」。
+  - 注册形态分两种：composition 插件（mailbridge / llmrouter / teamhub / injector / modelroute / modsub / modeswitch / archive / verify / plasmid）直接用 `defineTool` 注册；auto-plugins 三条动态插件用 `harness.defineTool` + `harness.registerTool(ctx, tool)` 注册（见附录）。
 
 - 每个工具小节新增「**工具提示词（模型可见的 description，原文）**」字段：收录该工具注册时传给 `defineTool` 的 `description` 原文（即模型看到的工具提示词）；参数级提示词见各参数表的「说明」列（已尽量原文收录）。
 
 ---
 
-## 工具清单速查（插件 × 工具，共 34 个）
+## 工具清单速查（插件 × 工具，共 44 个）
 
 | 插件 | 工具 | 一句话用途 |
 | --- | --- | --- |
@@ -66,6 +69,16 @@
 | sklui | `skill_remove` | 永久移除本管理器添加的技能 |
 | plins | `dev_stop_dyn_plugin` | 按 pluginId 前缀应急停止动态插件（宿主+客户端两半） |
 | sfind | `session_find` | 按关键字查会话（id/标题），优先于 session_list 省上下文 |
+| archive | `archive_read_event` | 按 sessionId+seq 精确读事件及上下文窗口（证据句柄的权威读取端） |
+| archive | `archive_list_events` | 列会话事件索引（seq/type/time/surface），快速扫一眼 |
+| archive | `archive_filter_events` | 会话内按类型/关键字过滤（字面量匹配，不区分大小写、忽略多余空白） |
+| archive | `archive_trace` | 追踪祖先链与后代树（谁派生了谁） |
+| verify | `verify_claim` | 言行一致验货：git commit / 文件存在 / 文本条目，返回 evidence 原文 |
+| plasmid | `plasmid_submit` | 自荐制质粒提交：四道闸（格式/证据/密钥/查重）全自动，只可新增/更新、不可删除 |
+| plasmid | `plasmid_search` | 拉取制检索：按相关度+适用度排序返回摘要列表 |
+| plasmid | `plasmid_get` | 按 id 拉取一条质粒完整文本 |
+| plasmid | `plasmid_report` | 用后反馈 worked/failed，fitness 滑动窗口跌破 0.3 降级 idea |
+| plasmid | `gap_report` | 缺口报告进待办：outlet 出口三选一，共用质粒管道 |
 
 ---
 
@@ -931,6 +944,281 @@
   - query 为空 → `{"ok": false, "error": "query is required"}`（hostCode L45）。
   - 缓存读失败只损失标题来源、不报错；**离线且无缓存标题的会话不会出现在结果里**（只有缓存标题集 + 在线兜底，待审校确认是否有意）。
 - **关联**：`session_list`（被替代方）、`session_read` / `session_send`（取 id）；技能 `cross-session-mailbox`。
+
+---
+
+## archive（项目档案，#67 新增）
+
+**插件级说明**：项目档案 v0：证据句柄与精确读取——薄封装上游 `sessionQuery` 服务，**只读、不建索引**（`archive.mjs:1`）。依赖注入 `['sessionQuery', 'tools']`（`archive.mjs:13`）；四个工具均经本插件 `registerTool` 包装注册（`archive.mjs:18-33`），`execute` 抛出的异常统一转为 `{"ok": false, "error": "<message>"}`。事件坐标 `<sessionId>:<seq>` 是项目档案的证据句柄（质粒/缺口报告的 evidence 字段引用这个稳定坐标，见 plasmid 一节），`archive_read_event` 是其权威读取端。各工具对 `sessionId` 做独立必填校验（空串 → `ok: false`）。
+
+### archive_read_event
+
+- **所属插件**：archive
+- **一句话用途**：按 sessionId + seq 精确读取一个会话事件及其上下文窗口——项目档案的证据句柄，质粒/缺口报告的 evidence 字段引用这个稳定坐标；事件内容完整返回、不截断。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 按 sessionId + seq 精确读取一个会话事件及其上下文窗口。这是项目档案的证据句柄：质粒/缺口报告的 evidence 字段引用这个稳定坐标。事件内容完整返回，不截断。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | sessionId | string | 是 | — | 会话 id。 |
+  | seq | number | 是 | — | 事件 seq（会话内单调递增）。 |
+  | before | number | 否 | 0 | 向前包含的上下文事件数。 |
+  | after | number | 否 | 0 | 向后包含的上下文事件数。 |
+
+- **输出**：`{"ok": true, "session": <会话信息>, "target": <目标事件>, "events": [...], "startSeq": <窗口起始 seq>, "endSeq": <窗口结束 seq>}`（`archive.mjs:52`）。
+- **语义**：
+  - `sessionId` 空串直接失败；`seq` 必须是**非负安全整数**（`archive.mjs:47-48`）。
+  - `before` / `after` 非安全整数或负数时回落 0（`archive.mjs:49-50`）。
+  - 调 `sessionQuery.readEvent({sessionId, seq, before, after})`，把返回窗口展开为六个字段（`archive.mjs:51-52`）。
+- **边界与失败**：
+  - `{"ok": false, "error": "sessionId is required"}`（`archive.mjs:47`）。
+  - `{"ok": false, "error": "seq must be a non-negative safe integer"}`（`archive.mjs:48`）。
+  - 其余异常由 `registerTool` 包装为 `{"ok": false, "error": "<message>"}`（`archive.mjs:28`）。
+- **关联**：`archive_filter_events`（找坐标）、`archive_list_events`；plasmid 的 `plasmid_submit` / `gap_report`（evidence 句柄的权威读取端）。
+
+### archive_list_events
+
+- **所属插件**：archive
+- **一句话用途**：列一个会话的事件索引（seq/type/time/surface），快速扫一眼该会话发生过什么，再决定用 `archive_read_event` 精读哪几个。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 列一个会话的事件索引（seq/type/time/surface），用于快速扫一眼该会话发生过什么，再决定用 archive_read_event 精读哪几个事件。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | sessionId | string | 是 | — | 会话 id。 |
+  | limit | number | 否 | 100（上限 500） | 最多返回事件数。 |
+
+- **输出**：`{"ok": true, "count": <全部记录数>, "events": [...最后 limit 条]}`（`archive.mjs:67`）。注意 `count` 是截断**前**的记录总数，`events` 是截断后的。
+- **语义**：
+  - `sessionQuery.listEvents(sessionId)` 取全量记录（`archive.mjs:65`）。
+  - cap：`limit` 为安全正整数时 `min(limit, 500)`，否则默认 100；返回 `records.slice(-cap)`（最后 cap 条，`archive.mjs:66`）。
+- **边界与失败**：`sessionId` 空 → `{"ok": false, "error": "sessionId is required"}`；其余异常统一包装 `ok: false`。
+- **关联**：`archive_read_event`（精读）、`archive_filter_events`（带过滤的精读入口）。
+
+### archive_filter_events
+
+- **所属插件**：archive
+- **一句话用途**：在一个会话内按事件类型 / 关键字过滤事件，返回带语义文本的匹配文档；关键字是字面量匹配（不区分大小写、忽略多余空白）。找 evidence 坐标的推荐入口。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 在一个会话内按事件类型 / 关键字过滤事件，返回带语义文本的匹配文档。关键字是字面量匹配：不区分大小写、忽略多余空白。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | sessionId | string | 是 | — | 会话 id。 |
+  | types | array | 否 | 无 | 事件类型白名单，如 `["tool/call","tool/result"]`。 |
+  | text | string | 否 | 无 | 语义文本关键字。 |
+  | limit | number | 否 | 50（上限 500） | 最多返回条数。 |
+
+- **输出**：`{"ok": true, "count": <匹配总数>, "events": [...最后 limit 条]}`（`archive.mjs:87`）。
+- **语义**：
+  - `types` 为非空数组时推入 `{kind: 'type', values: <字符串化>}` 过滤条件；`text` 非空（trim 后）时推入 `{kind: 'text', text}`（`archive.mjs:82-84`）；两者都缺则不过滤。
+  - 调 `sessionQuery.filterEvents(sessionId, filters)`（`archive.mjs:85`）。
+  - cap：`limit` 安全正整数时 `min(limit, 500)`，否则默认 50；`docs.slice(-cap)`（`archive.mjs:86-87`）。
+- **边界与失败**：`sessionId` 空 → `ok: false`；其余异常统一包装。
+- **关联**：`archive_read_event`（精读坐标）；`plasmid_submit` / `gap_report`（描述明确指引「用 archive_filter_events 找到相关事件后抄它的 sessionId 和 seq」）。
+
+### archive_trace
+
+- **所属插件**：archive
+- **一句话用途**：追踪一个会话的祖先链与后代树（谁派生了它、它派生了谁），回答「谁和谁合作过」。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 追踪一个会话的祖先链与后代树（谁派生了它、它派生了谁），回答「谁和谁合作过」。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | sessionId | string | 是 | — | 会话 id。 |
+
+- **输出**：`{"ok": true, "target": <目标会话>, "ancestors": [...], "descendants": [...], "complete": true|false}`；`complete: false` 时额外附 `unresolvedParentId`（祖先链断裂处无法解析的父 id）——字段由代码条件展开决定（`archive.mjs:100`）。
+- **语义**：调 `sessionQuery.traceSession(sessionId)`，返回 `{target, ancestors, descendants, complete}`，`complete === false` 时追加 `unresolvedParentId`（`archive.mjs:99-100`）。
+- **边界与失败**：`sessionId` 空 → `ok: false`；其余异常统一包装。
+- **关联**：`archive_read_event`、`archive_list_events`。
+
+---
+
+## verify（言行一致检查器，#68 新增）
+
+**插件级说明**：言行一致检查器 v0：`verify_claim` 显式验货工具（git commit / 文件存在 / 文本条目），证据原文可复核。**不写任何东西，只读**（`verify.mjs:1, 120`）。纯验证逻辑 `runVerification({type, target, path, cwd})` 单独导出（`verify.mjs:30-86`），可被探针/其他模型直接复用。路径安全：所有路径先过 `assertInside(cwd, target)`——解析后必须落在基准目录内，否则抛 `path escapes the working directory: <target>`（`verify.mjs:18-27`）。cwd 缺省取调用会话 header 的 cwd（`callerCwd`，`verify.mjs:110-117`）。**注意输出形态**：`verify_claim` 直接返回 `runVerification` 的对象，**没有统一的 `{"ok": true}` 外壳**——成功形态含 `ok: true, verified: true, evidence`，失败形态含 `ok: false, verified: false` 与 `error` / `note`（见条目输出）。
+
+### verify_claim
+
+- **所属插件**：verify
+- **一句话用途**：言行一致检查器：显式验货——验证声称的 git 提交 / 文件 / 文本条目真实存在，返回 evidence（原始证据文本）供独立复核；只读、不写任何东西。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 言行一致检查器：显式验货。当汇报声称"已提交 <sha>"、"已修复 <文件>"、"已登记 <条目>"时，模型主动调用本工具验证声称的对象是否真实存在。返回 evidence（原始证据文本）供其他模型独立复核，不是黑箱 true/false。不写任何东西，只读。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | type | string | 是 | — | 验证类型：git-commit=校验 git 提交 sha 存在；file=校验文件存在；text-in-file=校验文件里含指定条目（如 'U-A1'）。 |
+  | target | string | 是 | — | 声称的对象：git-commit 时是完整提交 sha；file 时是相对路径；text-in-file 时是想命中的关键字/ID。 |
+  | path | string | 否 | 无 | 仅 text-in-file 必填：要 grep 的绝对路径或相对路径。 |
+  | cwd | string | 否 | 当前会话的工作目录 | 可选：验证基准目录（git 仓库根 / 相对路径基准）。 |
+
+- **输出**（`runVerification` 的返回值原样，`verify.mjs:145-146`）：
+  - git-commit 成功：`{"ok": true, "verified": true, "type": "git-commit", "target", "cwd", "evidence": "<%h %s / %an <%ae> / %ad>"}`
+  - file 成功：`{"ok": true, "verified": true, "type": "file", "target", "cwd", "evidence": "path=<绝对路径>\nsize=<字节>\nmtime=<ISO>\ntype=file|directory"}`
+  - text-in-file 成功：`{"ok": true, "verified": true, "type": "text-in-file", "target", "path": <解析后绝对路径>, "hitCount", "evidence": "<最多 10 行命中，每行 `行号: 行内容前 160 字符`>"}`
+- **语义**（`runVerification`，`verify.mjs:30-86`）：
+  - **git-commit**：sha 必须匹配 `/^[0-9a-fA-F]{7,40}$/`；`git -C <cwd> cat-file -t <sha>`（timeout 15s）确认对象类型为 `commit`；再 `git show -s --format=%h %s%n%an <%ae> %ad` 取证据原文（`verify.mjs:31-40`）。
+  - **file**：`assertInside(cwd, target)` 后 `stat`，evidence 含绝对路径 / size / mtime(ISO) / 类型（`verify.mjs:49-56`）。
+  - **text-in-file**：`assertInside(cwd, path)` 后读 utf8，逐行 `includes(target)` 收集命中（`verify.mjs:65-76`）；`hitCount` 为总命中数，evidence 只带前 10 行。
+  - cwd 解析：显式 `args.cwd` 优先，否则取调用会话 header 的 cwd，都拿不到 → `{"ok": false, "error": "cannot resolve working directory (no exec cwd and no cwd argument)"}`（`verify.mjs:143-144`）。
+- **边界与失败**：
+  - sha 格式不合法 → `{"ok": false, "verified": false, "error": "not a plausible commit sha: <sha>"}`（`verify.mjs:33`）。
+  - git 对象存在但不是 commit → `{"ok": false, "verified": false, "note": "git object exists but is not a commit: <type>"}`（`verify.mjs:36`）。
+  - git 失败（退出码 128，如 sha 不存在）→ `{"ok": false, "verified": false, "type": "git-commit", "target", "cwd", "evidence": <错误原文前 3 行>}`——原始证据进 `evidence`、不给 `error` 字段（`verify.mjs:41-44`）。
+  - 文件不存在：file / text-in-file 均 `{"ok": false, "verified": false, "note": "ENOENT: file does not exist"}`（`verify.mjs:58-60, 78-80`）。
+  - text-in-file 缺 path → `{"ok": false, "error": "path is required for text-in-file"}`（`verify.mjs:66`）；无命中 → `{"ok": false, "verified": false, "note": "no line contains the target"}`（`verify.mjs:75`）。
+  - 未知 type → `{"ok": false, "error": "unknown type: <type>"}`（`verify.mjs:85`）。
+  - 路径逃逸 cwd → 抛 `path escapes the working directory: <target>`，由包装转 `ok: false`（`verify.mjs:24`）；git 非 128 / stat 非 ENOENT 等其他异常同样上抛包装。
+- **关联**：`git-commit-style` / `file-edit-protocol` 技能（验证声称的提交/文件/条目）；可配合 archive 系列核对档案坐标。
+
+---
+
+## plasmid（最薄质粒，#69 新增）
+
+**插件级说明**：最薄质粒 v0（dsh-forge.md §5）：自荐制经验单元。`plasmid_submit / plasmid_search / plasmid_get / plasmid_report` + 四道闸（格式/证据/密钥/查重）+ fitness 记录；`gap_report`（缺口报告，**#70 新增**）与质粒共用管道/证据闸/查重/注册表（`plasmid.mjs:1, 235`）。注册表 = `DSH_HOME/plasmids/registry.json`（缺省 `~/.dsh/plasmids/registry.json`，`defaultRegistryPath`，`plasmid.mjs:26-28`），JSON 文件原子写（tmp + rename，`plasmid.mjs:40-45`）；质粒 P-xxx 与缺口 G-xxx 各自独立计数（`plasmid.mjs:48-59`）。**删除键只在人手里，工具只能新增/更新**（`plasmid.mjs:8, 411`）。机器**四道闸全自动**：格式 → 证据 → 密钥 → 查重（`plasmid.mjs:5, 98-165`）；证据闸挂档案（`sessionQuery.readEvent` 解析 `<sessionId>:<seq>` 句柄，引不出来直接拒，`plasmid.mjs:150-165`）；密钥闸只报命中模式名、不回显疑似密钥（`plasmid.mjs:132-148`）。fitness 近期滑动窗口（最近 20 条）算成功率：跌破 0.3 自动降级 `status='idea'`（有争议标注）、回升自动恢复 `active`（`plasmid.mjs:348-373`）。另注册只读面板数据面 `GET/HEAD /dsh-forge/plasmids`（`?id=` 单条 / `?q=` 搜索 / 缺省全量摘要，`plasmid.mjs:492-527`），非模型工具。**注意与通用约定的差异**：`plasmid_submit` / `gap_report` 的接受/拒绝形态是 `{"accepted": true|false, "gate": ...}`（无 `ok` 字段），`plasmid_search` 直接返回 `{count, total, results}`（无 ok 外壳）；只有 `plasmid_get` / `plasmid_report` 用 `ok` 字段，见各条目「边界与失败」。
+
+### plasmid_submit
+
+- **所属插件**：plasmid
+- **一句话用途**：自荐制质粒提交：学到教训的当下自己提交一条修复质粒（WHEN/WORKED/FAILED/WHY + evidence 句柄）；机器四道闸全自动，只可新增/更新、不可删除。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 质粒提交（自荐制，dsh-forge §5）。学到教训的当下自己提交一条修复质粒：WHEN 触发条件 / WORKED 怎么做成了（几次）/ FAILED 怎么做败了（几次）/ WHY 为什么 + evidence 证据句柄列表。机器四道闸全自动：格式→证据→密钥→查重。evidence 必须引用档案里真实存在的事件坐标 <sessionId>:<seq>（用 archive_filter_events 找到相关事件后抄它的 sessionId 和 seq）；引不出来直接拒。写的是陈述句不是命令句。删除键只在人手里，本工具只能新增/更新。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | type | string | 是 | — | 质粒类型。v0 只做修复质粒，固定 "fix"。 |
+  | when | string | 是 | — | WHEN：什么时候遇到的（触发条件）。 |
+  | worked | string | 是 | — | WORKED：怎么做成了，几次。 |
+  | failed | string | 是 | — | FAILED：怎么做败了，几次（负向知识最值钱，如实写）。 |
+  | why | string | 是 | — | WHY：为什么（机制/条件/范围）。 |
+  | evidence | array | 是 | — | 证据句柄列表（1..8），形如 `"<sessionId>:<seq>"`，必须能从档案解析出真实事件。 |
+  | confidence | string | 否 | medium | 枚举 `high` \| `medium` \| `low`。 |
+  | scope | string | 否 | project | 作用域说明（<=200 字）。 |
+  | updateOf | string | 否 | 无 | 可选：要更新的既有质粒 id（如 "P-002"）。给定时不跑查重闸，给该条出新版本。 |
+
+- **输出**（`submitPlasmid` 返回值，无 `ok` 外壳，`plasmid.mjs:232`）：
+  - 接受：`{"accepted": true, "id": "P-xxx", "status": "active", "version": <n>, "updated": true|false}`
+  - 拒绝：`{"accepted": false, "gate": "format"|"evidence"|"secret"|"dedup", "error": "<原因>"}`；dedup 额外附 `existingId` / `similarity` / `existingWhen` / `suggestion`
+- **语义**（`submitPlasmid`，`plasmid.mjs:169-233`）：
+  - **格式闸**（`gateFormat`，`plasmid.mjs:111-130`）：type 必须为 `"fix"`；when/worked/failed/why 必填且 ≤4000 字符；evidence 必须 1..8 个合法 `<sessionId>:<seq>` 句柄（`parseEvidenceHandle` 在**最后一个冒号**处切分、sessionId 不含空格，`plasmid.mjs:100-109`）；confidence 非法值直接拒；scope >200 拒。
+  - **证据闸**（`gateEvidence`，`plasmid.mjs:150-165`）：逐个句柄经 `sessionQuery.readEvent` 解析，坐标处无事件或读取失败 → 拒（错误里列出每个句柄原因，并指引「请用 archive_filter_events / archive_read_event 找到真实坐标再提交」）。
+  - **密钥闸**（`gateSecrets`，`plasmid.mjs:132-148, 179`）：扫描 when/worked/failed/why/scope 拼接文本是否含高信号密钥模式（private-key / `sk-` 前缀 / AWS AKIA / GitHub token / GitHub PAT / Slack token / 凭证赋值），命中只报模式名（`命中「<模式名>」`）、不回显疑似密钥。
+  - **查重闸**（`plasmid.mjs:185-201`）：非 updateOf 时与库内每条修复质粒算文本相似度（`similarity` 为 token 集 Jaccard 变体），最高 ≥0.4 → 拒，suggestion 指引用 updateOf 出更新或写明差异重试。
+  - 四闸全过 → 写注册表（`plasmid.mjs:203-230`）：updateOf 存在 → 合并旧条目出新版本（version+1、evidence 替换、updatedAt 刷新）；否则新条目 `P-<n>`（`nextId` 自增）、`status: 'active'`、fitness 初始 `{worked: 0, failed: 0, seen: 0, recent: [], score: 0.5}`。source 取调用会话 id，取不到为 `'unknown'`。
+- **边界与失败**：四道闸拒绝均为 `{"accepted": false, "gate": <闸名>, ...}`（**不是** `ok: false`）；其余异常由包装转 `ok: false`。
+- **关联**：`archive_filter_events` / `archive_read_event`（找 evidence 坐标）、`plasmid_search`（拉取制检索）、`plasmid_get`（取全文）、`plasmid_report`（用后反馈）。
+
+### plasmid_search
+
+- **所属插件**：plasmid
+- **一句话用途**：拉取制检索（§5.5/5.6）：遇到情况先查摘要和适用度，想要全文再用 plasmid_get 拉；默认按相关度+适用度排序。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 质粒/缺口检索（拉取制，dsh-forge §5.5/5.6）。遇到情况先查摘要和适用度，想要全文再用 plasmid_get 拉。返回排序后的摘要（id/状态/when 或 what/worked/fitness/outlet），默认按相关度+适用度。系统不主动推送内容。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | query | string | 否 | 无 | 关键字（空格分词，全部命中才算高相关）。 |
+  | type | string | 否 | 全查 | 类型过滤：fix（修复质粒）\| gap（缺口报告）。 |
+  | scope | string | 否 | 全查 | 作用域过滤（如 "project"）。 |
+  | status | string | 否 | 全查 | 状态过滤：active/idea（质粒）、open/adopted/rejected（缺口）。 |
+  | limit | integer | 否 | 20（上限 100） | 最多返回条数。 |
+
+- **输出**：`{"count": <命中数>, "total": <过滤后总数>, "results": [<摘要>...]}`（**无 `ok` 外壳**，`searchPlasmids`，`plasmid.mjs:339`）。摘要 = `summarize`（`plasmid.mjs:85-96`）：`id / type / status / confidence / scope / version / when(140 截断) / worked(140 截断) / evidenceCount / fitness{score, seen, worked, failed} / createdAt / updatedAt / source`；gap 条目附加 `outlet`；有打分时附加 `relevance`。
+- **语义**：
+  - 过滤：type/scope/status 非空即精确匹配（`plasmid.mjs:317-322`）。
+  - **打分**（`plasmid.mjs:323-332`）：query 空 → relevance 0；否则 `ratio = 命中词数 / 词数`，`sub = blob 含完整 query 子串 ? 1 : 0`，`relevance = round(0.7*ratio + 0.3*sub, 2)`；分词走 `tokensOf`（汉字逐字、其余按字母数字下划线）。
+  - 排序：relevance 降序 → fitness.score 降序 → id 升序（`plasmid.mjs:333-336`）。
+  - cap：`limit` 安全正整数时 `min(limit, 100)`，否则 20。
+  - **副作用**：命中结果的条目 `fitness.seen + 1` 并落盘（"看过"计数，`plasmid.mjs:441-451`）。
+- **边界与失败**：无显式失败路径（注册表缺失按空库返回）；异常统一包装。
+- **关联**：`plasmid_get`（全文）、`plasmid_submit`。
+
+### plasmid_get
+
+- **所属插件**：plasmid
+- **一句话用途**：按 id 拉取一条质粒的完整文本（WHEN/WORKED/FAILED/WHY + 机读字段 + evidence 坐标 + fitness）。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 按 id 拉取一条质粒的完整文本（WHEN/WORKED/FAILED/WHY + 机读字段 + evidence 坐标 + fitness）。plasmid_search 只给摘要，需要全文时用这个。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | id | string | 是 | — | 质粒 id，如 "P-002"。 |
+
+- **输出**：`{"ok": true, "entry": <完整条目>}`（`getPlasmid`，`plasmid.mjs:342-346`）；不存在 → `{"ok": false, "error": "没有质粒 <id>"}`。
+- **语义**：注册表全量线性查找 id（`plasmid.mjs:343`）。
+- **边界与失败**：id 不存在 → `{"ok": false, "error": "没有质粒 <id>"}`（`plasmid.mjs:344`）。
+- **关联**：`plasmid_search`、`plasmid_submit`。
+
+### plasmid_report
+
+- **所属插件**：plasmid
+- **一句话用途**：质粒使用反馈（fitness）：用后回报 worked/failed，fitness 近期滑动窗口算成功率，跌破 0.3 自动降级 `'idea'`（回升自动恢复 active）。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 质粒使用反馈（fitness）。用了一条质粒后回报它这次管不管用：worked=这条经验对得上、乱帮了忙，failed=这次误导了我。fitness 用近期滑动窗口算成功率，跌破 0.3 自动降级为 "idea"（仍有争议标注）。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | id | string | 是 | — | 质粒 id。 |
+  | outcome | string | 是 | — | 枚举 `worked` \| `failed`：worked=帮上忙；failed=误导。 |
+  | note | string | 否 | 无 | 可选：一句话记下具体怎样（<=500 字，超出截断）。 |
+
+- **输出**：`{"ok": true, "id", "outcome", "score": <成功率 0-1>, "recentWindow": <窗口条数>, "status": "active"|"idea"}`（`reportPlasmid`，`plasmid.mjs:372`）；不存在 → `{"ok": false, "error": "没有质粒 <id>"}`。
+- **语义**（`reportPlasmid`，`plasmid.mjs:348-373`）：
+  - 反馈记录进 `fitness.recent`，窗口 = 最近 20 条（`recent.slice(-20)`）；`score = worked + failed === 0 ? 0.5 : round(worked / (worked + failed), 2)`。
+  - **降级/恢复**：`score < 0.3` → `status = 'idea'`；原为 idea 且 `score >= 0.3` → 恢复 `'active'`；其余保持（`plasmid.mjs:360`）。
+  - note 经 `first(note, 500)` 截断（只记录，不影响 score）；fitness 累计 worked/failed、seen 不变；写回注册表并原子落盘。
+- **边界与失败**：id 不存在 → `ok: false`；其余异常包装。
+- **关联**：`plasmid_search` / `plasmid_get`（用前查看）、`plasmid_submit`。
+
+### gap_report（#70 新增）
+
+- **所属插件**：plasmid
+- **一句话用途**：缺口报告（§5.12）：干活时"这里少了个东西"当场记下来进待办；共用质粒的证据闸/密钥闸/查重/注册表，只进待办、不改变行为；删除/改状态只在人手里。
+
+- **工具提示词（模型可见的 description，原文）**：
+  > 缺口报告（§5.12）：干活时"这里少了个东西"当场记下来进待办。与质粒共用证据闸/密钥闸/查重/注册表，只进人待办、不改变行为。出口分流三选一：缺工具→先查插件市场雷达（采用优先），查无此物才进开发 backlog；流程可以更好→转方法质粒候选，走自荐制的闸；协作怎么配合更合适→不进 backlog，直接喂评分系统和能力卡。evidence 必须引用档案里真实存在的事件坐标 <sessionId>:<seq>。删除/改状态只在人手里（本工具只能新增）。
+- **参数**：
+
+  | 参数名 | 类型 | 必填 | 默认 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | what | string | 是 | — | 缺的是什么（一句话）。 |
+  | why | string | 是 | — | 为什么缺 / 缺了之后卡在哪。 |
+  | impact | string | 否 | 无 | 可选：影响面（谁/什么活被拖住）。 |
+  | outlet | string | 否 | backlog | 出口：backlog（开发待办，默认）\| plasmid-candidate（转方法质粒候选）\| scoring（喂评分系统）。 |
+  | evidence | array | 是 | — | 证据句柄列表（1..8），形如 `"<sessionId>:<seq>"`。 |
+  | confidence | string | 否 | medium | 枚举 `high` \| `medium` \| `low`。 |
+  | scope | string | 否 | project | 作用域说明（<=200 字）。 |
+
+- **输出**（`submitGap` 返回值，**无 `ok` 外壳**，`plasmid.mjs:308`）：
+  - 接受：`{"accepted": true, "id": "G-xxx", "type": "gap", "outlet": "backlog"|"plasmid-candidate"|"scoring", "status": "open"}`
+  - 拒绝：`{"accepted": false, "gate": "format"|"evidence"|"secret"|"dedup", "error": ...}`；dedup 额外附 `existingId` / `similarity` / `existingWhat` / `suggestion`
+- **语义**（`submitGap`，`plasmid.mjs:263-309`）：
+  - **格式闸**（`gateFormatGap`，`plasmid.mjs:240-261`）：what/why 必填且 ≤4000 字符；impact ≤2000；evidence 1..8 个合法句柄；outlet ∈ backlog | plasmid-candidate | scoring；confidence ∈ high/medium/low；scope ≤200。
+  - **证据闸** / **密钥闸**与质粒**共用**（`gateEvidence` / `gateSecrets`，密钥闸扫描 what/why/impact/scope 拼接文本）。
+  - **查重闸只对 gap 类**：blob = what + why + impact，与库内每条 gap 算相似度，最高 ≥0.5 → 拒，suggestion 指引「有进展需人工更新原条状态；不同缺口写明差异再重试」（`plasmid.mjs:276-291`）。
+  - 接受 → 新条目 `G-<n>`（`nextId(reg.entries, 'G-001')`，与 P-xxx 独立计数）、`status: 'open'`、outlet 缺省 `'backlog'`、fitness 初始（`plasmid.mjs:293-306`）。
+  - **只能新增，没有更新路径**：删除/改状态只在人手里。
+- **边界与失败**：每道闸拒绝为 `{"accepted": false, "gate": <闸名>, ...}`；异常统一包装 `ok: false`。
+- **关联**：`plasmid_submit`（共用管道）；`archive_filter_events` / `archive_read_event`（取坐标）；outlet 分流后进开发待办 / 方法候选 / 评分系统。
 
 ---
 
