@@ -1,39 +1,14 @@
 // description: 项目档案 v0：证据句柄与精确读取（薄封装上游 sessionQuery 服务，只读、不建索引）。
-import { defineTool } from '@deepseek-ai/dsh-tools'
-
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
-}
+import { errText, jsonText } from './lib/forge-common.mjs'
+import { registerTool } from './lib/forge-tools.mjs'
 
 export default {
   inject: ['sessionQuery', 'tools'],
   apply(ctx) {
     const sessionQuery = ctx.sessionQuery
-    const tools = ctx.tools
-
-    function registerTool(name, description, parameters, execute) {
-      const tool = defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        async execute(args, exec) {
-          try { return await execute(args, exec) } catch (error) { return jsonText({ ok: false, error: errText(error) }) }
-        },
-      })
-      const dispose = tools.register(tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
-    }
 
     // ── 证据句柄：按稳定坐标 sessionId:seq 精确读取 ──────────────────────
-    registerTool('archive_read_event',
+    registerTool(ctx, 'archive_read_event',
       '按 sessionId + seq 精确读取一个会话事件及其上下文窗口。这是项目档案的证据句柄：质粒/缺口报告的 evidence 字段引用这个稳定坐标。事件内容完整返回，不截断。',
       {
         sessionId: { type: 'string', required: true, description: '会话 id。' },
@@ -53,7 +28,7 @@ export default {
       })
 
     // ── 事件索引：快速扫一眼会话发生过什么 ──────────────────────────────
-    registerTool('archive_list_events',
+    registerTool(ctx, 'archive_list_events',
       '列一个会话的事件索引（seq/type/time/surface），用于快速扫一眼该会话发生过什么，再决定用 archive_read_event 精读哪几个事件。',
       {
         sessionId: { type: 'string', required: true, description: '会话 id。' },
@@ -68,7 +43,7 @@ export default {
       })
 
     // ── 会话内过滤检索：按类型 / 关键字 ─────────────────────────────────
-    registerTool('archive_filter_events',
+    registerTool(ctx, 'archive_filter_events',
       '在一个会话内按事件类型 / 关键字过滤事件，返回带语义文本的匹配文档。关键字是字面量匹配：不区分大小写、忽略多余空白。',
       {
         sessionId: { type: 'string', required: true, description: '会话 id。' },
@@ -88,7 +63,7 @@ export default {
       })
 
     // ── 血缘追踪：谁派生了谁 ───────────────────────────────────────────
-    registerTool('archive_trace',
+    registerTool(ctx, 'archive_trace',
       '追踪一个会话的祖先链与后代树（谁派生了它、它派生了谁），回答「谁和谁合作过」。',
       {
         sessionId: { type: 'string', required: true, description: '会话 id。' },

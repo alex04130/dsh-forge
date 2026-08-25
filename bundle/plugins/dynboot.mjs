@@ -1,9 +1,7 @@
 // description: 动态插件启动器：启动时把 auto-plugins.json 的条目 define 成动态插件（重启自动恢复）。
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { DSH_HOME } from './lib/forge-common.mjs'
 
-const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const MANIFEST_PATH = DSH_HOME + '/auto-plugins.json'
 
 let restored = false

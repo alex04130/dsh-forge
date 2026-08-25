@@ -1,17 +1,11 @@
 // description: 模型委派：model_list / model_call，把文本任务交给任意已配置的 provider/model 并取回完整结果。
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { errText, jsonText } from './lib/forge-common.mjs'
+import { registerTool } from './lib/forge-tools.mjs'
 
 let idCounter = 0
 function makeId(prefix) {
   idCounter += 1
   return prefix + '-' + Date.now().toString(36) + '-' + idCounter.toString(36) + '-' + Math.floor(Math.random() * 1679615).toString(36)
-}
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
 }
 
 export default {
@@ -21,29 +15,7 @@ export default {
     const skills = ctx.get('skills')
     if (llm === undefined) return
 
-    function registerTool(name, description, parameters, execute, timeoutMs) {
-      const tool = defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-        async execute(args, exec) {
-          try {
-            return await execute(args, exec)
-          } catch (error) {
-            return jsonText({ ok: false, error: errText(error) })
-          }
-        },
-      })
-      const dispose = ctx.tools.register(tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
-    }
-
-    registerTool('model_list',
+    registerTool(ctx, 'model_list',
       '列出本 DSH 进程中注册的每条 LLM 供应商路由及其提供的模型，外加一个反向索引（byModel：每个模型 id 由哪些供应商提供）。用于为 `model_call` 或 `spawn_model_subagent` 挑选 `provider`/`model` 组合，或检查某供应商/模型是否已配置。供应商通过 llm-pi-ai 设置项配置（baseURL/api/apiKeyEnv/models）；API 密钥按请求从凭据存储解析。用法规则见 `model-delegation` 技能。',
       {},
       async () => {
@@ -69,7 +41,7 @@ export default {
         return jsonText({ ok: true, providers, models, byModel })
       })
 
-    registerTool('model_call',
+    registerTool(ctx, 'model_call',
       '以一次性、纯文本补全的方式调用另一供应商（或同一供应商）的模型，并把它的完整回复作为本次工具调用的结果返回。这不是任务委派，也不是子代理：被借调模型只得到一个回合，不能调用工具，只返回文本；主模型始终掌控并消化回复。用于有边界的文本任务（翻译、摘要、分类、第二意见）。通过 `model_list` 挑选 `provider`/`model`。不支持嵌套工具调用：把被借调模型需要的一切都放进 prompt 和 system 文本里。用法规则见 `model-delegation` 技能。',
       {
         provider: { type: 'string', required: true, description: '供应商路由 id，如 "deepseek-official" 或 "kimi-coding"（见 model_list）。' },

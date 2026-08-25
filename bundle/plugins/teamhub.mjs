@@ -1,18 +1,12 @@
 // description: 代理团队（team_*）：队长 + 角色成员 + 依赖任务板，成员间可直接互发消息。
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import { collectModelEscalations, collectPresetEscalations, collectSandboxEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
+import { errText, jsonText } from './lib/forge-common.mjs'
+import { registerTool } from './lib/forge-tools.mjs'
 
 let idCounter = 0
 function makeId(prefix) {
   idCounter += 1
   return prefix + '-' + Date.now().toString(36) + '-' + idCounter.toString(36) + '-' + Math.floor(Math.random() * 1679615).toString(36)
-}
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
 }
 function callerId(exec, agents) {
   // Identity for team AUTHORIZATION decisions must come from the tool's own
@@ -88,28 +82,6 @@ export default {
     ctx.effect(() => () => {
       try { if (teamsUnit !== undefined) teamsUnit.close() } catch (error) { /* best-effort */ }
     })
-
-    function registerTool(name, description, parameters, execute, timeoutMs) {
-      const tool = defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-        async execute(args, exec) {
-          try {
-            return await execute(args, exec)
-          } catch (error) {
-            return jsonText({ ok: false, error: errText(error) })
-          }
-        },
-      })
-      const dispose = ctx.tools.register(tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
-    }
 
     function cleanId(value) {
       const id = String(value ?? '').trim()
@@ -226,7 +198,7 @@ export default {
       return { ok: true, member: { id: memberId, sessionId: started.childId, role }, ...(modeId !== undefined ? { mode: modeId } : {}), ...(escalations.length > 0 ? { approvedEscalations: escalations } : {}) }
     }
 
-    registerTool('team_create',
+    registerTool(ctx, 'team_create',
       '创建一个以你（调用会话）为队长的代理团队；一个队长同一时间只带领一个团队。可用 `members` 数组在建队时一次添加多个成员（每项含 memberId/role/prompt 及可选的 provider/model/reasoningEffort/mode，与 `team_add_member` 同策略：默认继承队长、提权逐项审批），可用 `tasks` 数组在建队时按数组序创建任务（每项含 title/description/assignee/dependencies；依赖引用的任务必须先出现在本数组或已存在于团队）。之后用 `team_add_member` 补成员、`team_add_members` 批量补成员、`team_create_task` 补任务、`team_send_message` 与成员交流。编排团队前先加载 agent-teamwork 技能：它涵盖团队设计、工作流和何时该沟通。',
       {
         name: { type: 'string', required: true, description: '简短团队名，如 "migration-squad"。' },
@@ -341,7 +313,7 @@ export default {
         })
       })
 
-    registerTool('team_add_member',
+    registerTool(ctx, 'team_add_member',
       '添加团队成员：派发一个带指定角色和任务提示词的可续子代理会话（成员继承本会话的组合，包括团队工具）。你选的成员 id 就是 `team_send_message` 发给它的地址。与 `spawn_model_subagent` 一样，可选的 `provider`/`model`/`reasoningEffort`/`mode` 覆盖默认继承队长；任何提权（更高的模型档位、跨系列换模型，或插件行能力面不是队长子集的模式）都会请求用户审批。完整工作流见 agent-teamwork 技能。',
       {
         memberId: { type: 'string', required: true, description: '简短成员 id/名字，如 "researcher" 或 "alice"。' },
@@ -367,7 +339,7 @@ export default {
         })
       })
 
-    registerTool('team_add_members',
+    registerTool(ctx, 'team_add_members',
       '批量添加团队成员：一次传入多个成员数组（每项含 memberId/role/prompt 及可选的 provider/model/reasoningEffort/mode）。逐项独立审批与失败隔离：某个成员提权被拒绝或 spawn 失败只影响该项，其余继续。与 `team_add_member`（单个）同策略。完整工作流见 agent-teamwork 技能。',
       {
         members: {
@@ -414,7 +386,7 @@ export default {
         })
       })
 
-    registerTool('team_create_task',
+    registerTool(ctx, 'team_create_task',
       '把团队工作拆成一个任务；可选声明依赖（必须先完成的任务 id）和指派人（成员 id；未指派的任务留在可认领池里等待）。完整工作流见 agent-teamwork 技能。',
       {
         title: { type: 'string', required: true, description: '简短任务标题。' },
@@ -455,7 +427,7 @@ export default {
         })
       })
 
-    registerTool('team_claim_task',
+    registerTool(ctx, 'team_claim_task',
       '为成员认领一个待处理任务（或取消认领退回待处理）。所有依赖必须已完成。队长可为任何人认领；成员只能为自己或未指派任务认领。完整工作流见 agent-teamwork 技能。',
       {
         taskId: { type: 'string', required: true, description: '任务 id，如 "t1"。' },
@@ -500,7 +472,7 @@ export default {
         })
       })
 
-    registerTool('team_update_task',
+    registerTool(ctx, 'team_update_task',
       '推进任务状态（claimed → in_progress → completed | failed | cancelled）并可选记录其输出。成员更新自己的任务；队长可更新任何任务。完整工作流见 agent-teamwork 技能。',
       {
         taskId: { type: 'string', required: true, description: '任务 id，如 "t1"。' },
@@ -541,7 +513,7 @@ export default {
         })
       })
 
-    registerTool('team_wait',
+    registerTool(ctx, 'team_wait',
       '暂停当前回合，等待另一名队员的消息或某个任务的完成（两者都给时任一满足即唤醒）。等待期间回合挂起、不消耗额外步骤：目标发来消息、目标任务 completed、或队长发来任何消息都会立即唤醒你继续。超时（默认 600 秒，上限 3600 秒）后返回 timeout，模型可再次调用继续等。队长随时可发消息拆掉等待，因此不会死锁。',
       {
         memberId: { type: 'string', description: '要等待的成员 id；省略则等待任意消息。' },
@@ -588,7 +560,7 @@ export default {
         })
       })
 
-    registerTool('team_send_message',
+    registerTool(ctx, 'team_send_message',
       '给队长或另一成员发消息。在线接收方立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。发送方永远是调用会话（不可伪造）。何时该沟通见 agent-teamwork 技能。',
       {
         to: { type: 'string', required: true, description: '接收方：成员 id 或 "captain"。' },
@@ -660,7 +632,7 @@ export default {
         })
       })
 
-    registerTool('team_status',
+    registerTool(ctx, 'team_status',
       '团队全貌：成员及其在线状态、带依赖和输出的任务板、以及排在你收件箱里的消息。轮询它以收集成员输出并决定下一步。完整工作流见 agent-teamwork 技能。',
       {},
       async (args, exec) => {
@@ -706,7 +678,7 @@ export default {
         })
       })
 
-    registerTool('team_delete',
+    registerTool(ctx, 'team_delete',
       '结束团队：尽力打断在线成员，然后归档团队记录（任务、依赖图和成员列表保留供回顾）。完整工作流见 agent-teamwork 技能。',
       {},
       async (args, exec) => {

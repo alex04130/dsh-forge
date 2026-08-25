@@ -1,5 +1,6 @@
 // description: 子代理模型路由策略：子代理默认继承父的 live 路由（绝不静默升级），显式指定才用别的；plan 计费重写。
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { errText, jsonText } from './lib/forge-common.mjs'
+import { registerTool } from './lib/forge-tools.mjs'
 
 // dsh-modelroute: subagent model-inheritance policy + model-series taxonomy +
 // plan-aware provider routing.
@@ -28,14 +29,6 @@ const DEFAULT_SERIES = {
   claude: { match: /^(claude|anthropic)/i, tiers: ['haiku', 'sonnet', 'opus'] },
   chatgpt: { match: /^(gpt|chatgpt|o1|o3|openai)/i, tiers: ['mini', 'lite', 'pro', 'max'] },
   qwen: { match: /^qwen/i, tiers: ['flash', 'lite', 'plus', 'max'] },
-}
-
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
 }
 
 export default {
@@ -179,24 +172,7 @@ export default {
       }
     })
 
-    function registerTool(name, description, parameters, execute) {
-      const tool = defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        async execute(args, exec) {
-          try { return await execute(args, exec) } catch (error) { return jsonText({ ok: false, error: errText(error) }) }
-        },
-      })
-      const dispose = ctx.tools.register(tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
-    }
-
-    registerTool('model_taxonomy',
+    registerTool(ctx, 'model_taxonomy',
       '显示模型系列分类（系列、档位关键词）并对一个模型 id 归类。',
       { model: { type: 'string', description: '要归入某系列和档位的模型 id。' } },
       async (args) => {
@@ -212,7 +188,7 @@ export default {
         return jsonText(out)
       })
 
-    registerTool('model_route_status',
+    registerTool(ctx, 'model_route_status',
       '显示当前代理路由；对子代理，显示它被钳制到的父级在线路由。',
       {},
       async (_args, exec) => {

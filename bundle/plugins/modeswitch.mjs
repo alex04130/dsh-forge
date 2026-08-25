@@ -1,14 +1,7 @@
 // description: 会话中途切换模式（switch_mode）；目标模式新增能力时先弹审批，同级或降级直接切。
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { collectPresetEscalations } from './lib/subagent-policy.mjs'
-
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
-}
+import { errText, jsonText } from './lib/forge-common.mjs'
 
 export default {
   inject: ['tools'],

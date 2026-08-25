@@ -1,8 +1,8 @@
 // description: 持久技能管理：技能存储（registry.json）+ 启用/禁用/删除，技能面板与模型工具共用一份注册表。
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { homedir } from 'node:os'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { isSkillName } from '@deepseek-ai/dsh-skill'
+import { errText, DSH_HOME, atomicWriteJson } from './lib/forge-common.mjs'
 
 // dsh-skillmanager: durable runtime skill store + management service.
 //
@@ -25,7 +25,6 @@ import { isSkillName } from '@deepseek-ai/dsh-skill'
 //   - invocation: the `skill` tool result or a user "/name" gesture renders
 //                the canonical <skill_content> block.
 
-const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const STORE_PATH = DSH_HOME + '/skillmanager/registry.json'
 
 // Built-in runtime skills, previously registered ad-hoc by mailbridge /
@@ -140,11 +139,6 @@ function mergeBuiltins(store) {
   }
 }
 
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-
 export default {
   inject: ['skills', 'systemPrompt'],
   apply(ctx) {
@@ -174,10 +168,7 @@ export default {
     let writeQueue = Promise.resolve()
     function persist() {
       const next = writeQueue.then(async () => {
-        await mkdir(dirname(STORE_PATH), { recursive: true })
-        const tmp = `${STORE_PATH}.tmp-${process.pid}`
-        await writeFile(tmp, JSON.stringify(store, null, 2), 'utf8')
-        await rename(tmp, STORE_PATH)
+        await atomicWriteJson(STORE_PATH, store)
       })
       writeQueue = next.catch(() => {})
       return next

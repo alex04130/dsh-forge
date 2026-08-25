@@ -1,19 +1,12 @@
 // description: 言行一致检查器 v0：verify_claim 显式验货工具（git commit / 文件存在 / 文本条目），证据原文可复核。
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import { execFile } from 'node:child_process'
 import { stat, readFile } from 'node:fs/promises'
 import { resolve, isAbsolute } from 'node:path'
 import { promisify } from 'node:util'
+import { errText, jsonText } from './lib/forge-common.mjs'
+import { registerTool } from './lib/forge-tools.mjs'
 
 const execFileAsync = promisify(execFile)
-
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
-}
 
 function assertInside(base, target) {
   const baseResolved = resolve(base)
@@ -88,24 +81,6 @@ export async function runVerification({ type, target, path, cwd }) {
 export default {
   inject: ['tools'],
   apply(ctx) {
-    const tools = ctx.tools
-
-    function registerTool(name, description, parameters, execute) {
-      const tool = defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        async execute(args, exec) {
-          try { return await execute(args, exec) } catch (error) { return jsonText({ ok: false, error: errText(error) }) }
-        },
-      })
-      const dispose = tools.register(tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
-    }
 
     function callerCwd(exec) {
       try {
@@ -116,7 +91,7 @@ export default {
       }
     }
 
-    registerTool('verify_claim',
+    registerTool(ctx, 'verify_claim',
       '言行一致检查器：显式验货。当汇报声称"已提交 <sha>"、"已修复 <文件>"、"已登记 <条目>"时，模型主动调用本工具验证声称的对象是否真实存在。返回 evidence（原始证据文本）供其他模型独立复核，不是黑箱 true/false。不写任何东西，只读。',
       {
         type: {

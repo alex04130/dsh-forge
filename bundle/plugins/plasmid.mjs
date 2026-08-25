@@ -6,25 +6,17 @@
 //   - 证据闸挂档案（sessionQuery.readEvent 解析 <sessionId>:<seq> 句柄，引不出来直接拒）
 //   - fitness 近期滑动窗口（§5.8），跌破 0.3 自动降级 status='idea'（删除键只在人手里）
 //   - 管理面板数据面：GET /dsh-forge/plasmids（只读；面板 UI 单独交付 v0.1）
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
-import { homedir } from 'node:os'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
-}
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { errText, jsonText, DSH_HOME, atomicWriteJson } from './lib/forge-common.mjs'
+import { registerTool } from './lib/forge-tools.mjs'
 function nowIso() {
   return new Date().toISOString()
 }
 
 // ── 注册表存取（原子写：tmp + rename，单进程串行由调用方掌握）────────────────
 export function defaultRegistryPath() {
-  return join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'plasmids', 'registry.json')
+  return join(DSH_HOME, 'plasmids', 'registry.json')
 }
 export async function loadRegistry(file) {
   try {
@@ -38,10 +30,7 @@ export async function loadRegistry(file) {
   }
 }
 export async function saveRegistry(file, data) {
-  await mkdir(dirname(file), { recursive: true })
-  const tmp = `${file}.tmp-${process.pid}`
-  await writeFile(tmp, JSON.stringify(data, null, 2), 'utf8')
-  await rename(tmp, file)
+  await atomicWriteJson(file, data)
 }
 
 // ── id 与文本工具 ──────────────────────────────────────────────────────────
@@ -383,7 +372,6 @@ export default {
   inject: ['sessionQuery', 'tools', 'webServer'],
   apply(ctx) {
     const sessionQuery = ctx.sessionQuery
-    const tools = ctx.tools
     const webServer = ctx.webServer
     const registryPath = defaultRegistryPath()
 
@@ -396,24 +384,7 @@ export default {
       }
     }
 
-    function registerTool(name, description, parameters, execute) {
-      const tool = defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        async execute(args, exec) {
-          try { return await execute(args, exec) } catch (error) { return jsonText({ ok: false, error: errText(error) }) }
-        },
-      })
-      const dispose = tools.register(tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
-    }
-
-    registerTool('plasmid_submit',
+    registerTool(ctx, 'plasmid_submit',
       '质粒提交（自荐制，dsh-forge §5）。学到教训的当下自己提交一条修复质粒：WHEN 触发条件 / WORKED 怎么做成了（几次）/ FAILED 怎么做败了（几次）/ WHY 为什么 + evidence 证据句柄列表。机器四道闸全自动：格式→证据→密钥→查重。evidence 必须引用档案里真实存在的事件坐标 <sessionId>:<seq>（用 archive_filter_events 找到相关事件后抄它的 sessionId 和 seq）；引不出来直接拒。写的是陈述句不是命令句。删除键只在人手里，本工具只能新增/更新。',
       {
         type: { type: 'string', required: true, const: 'fix', description: '质粒类型。v0 只做修复质粒，固定 "fix"。' },
@@ -432,7 +403,7 @@ export default {
         return jsonText(out)
       })
 
-    registerTool('plasmid_search',
+    registerTool(ctx, 'plasmid_search',
       '质粒/缺口检索（拉取制，dsh-forge §5.5/5.6）。遇到情况先查摘要和适用度，想要全文再用 plasmid_get 拉。返回排序后的摘要（id/状态/when 或 what/worked/fitness/outlet），默认按相关度+适用度。系统不主动推送内容。',
       {
         query: { type: 'string', description: '关键字（空格分词，全部命中才算高相关）。' },
@@ -458,7 +429,7 @@ export default {
         return jsonText(r)
       })
 
-    registerTool('plasmid_get',
+    registerTool(ctx, 'plasmid_get',
       '按 id 拉取一条质粒的完整文本（WHEN/WORKED/FAILED/WHY + 机读字段 + evidence 坐标 + fitness）。plasmid_search 只给摘要，需要全文时用这个。',
       { id: { type: 'string', required: true, description: '质粒 id，如 "P-002"。' } },
       async (args) => {
@@ -466,7 +437,7 @@ export default {
         return jsonText(getPlasmid(String(args.id ?? ''), reg))
       })
 
-    registerTool('plasmid_report',
+    registerTool(ctx, 'plasmid_report',
       '质粒使用反馈（fitness）。用了一条质粒后回报它这次管不管用：worked=这条经验对得上、乱帮了忙，failed=这次误导了我。fitness 用近期滑动窗口算成功率，跌破 0.3 自动降级为 "idea"（仍有争议标注）。',
       {
         id: { type: 'string', required: true, description: '质粒 id。' },
@@ -478,7 +449,7 @@ export default {
         return jsonText(out)
       })
 
-    registerTool('gap_report',
+    registerTool(ctx, 'gap_report',
       '缺口报告（§5.12）：干活时"这里少了个东西"当场记下来进待办。与质粒共用证据闸/密钥闸/查重/注册表，只进人待办、不改变行为。出口分流三选一：缺工具→先查插件市场雷达（采用优先），查无此物才进开发 backlog；流程可以更好→转方法质粒候选，走自荐制的闸；协作怎么配合更合适→不进 backlog，直接喂评分系统和能力卡。evidence 必须引用档案里真实存在的事件坐标 <sessionId>:<seq>。删除/改状态只在人手里（本工具只能新增）。',
       {
         what: { type: 'string', required: true, description: '缺的是什么（一句话）。' },

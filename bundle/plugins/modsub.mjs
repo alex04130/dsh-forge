@@ -1,14 +1,7 @@
 // description: 子代理派发（spawn_model_subagent）：可选 provider/model/effort/模式，默认全继承父代理，提权自动问用户。
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { collectModelEscalations, collectPresetEscalations, collectSandboxEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
-
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
-}
+import { errText, jsonText } from './lib/forge-common.mjs'
 
 // ── spawn_model_subagent v2 ──────────────────────────────────────────────
 // Subagent spawning with explicit mode / reasoning-effort / provider / model

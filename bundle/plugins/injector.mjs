@@ -1,8 +1,9 @@
 // description: 运行时插件注入（dev_inject_plugin）：把本地插件包注入运行中的 profile，注册表在重启后自动恢复。
-import { mkdir, symlink, readFile, writeFile, rename, rm, lstat } from 'node:fs/promises'
+import { mkdir, symlink, readFile, rm, lstat } from 'node:fs/promises'
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path'
-import { homedir } from 'node:os'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { errText, jsonText, DSH_HOME, atomicWriteJson } from './lib/forge-common.mjs'
+import { registerTool } from './lib/forge-tools.mjs'
 
 // dsh-injector: runtime plugin injection layer (BepInEx-style).
 //
@@ -29,17 +30,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 //     PACKAGE's own node_modules (the loader does not map it to the checkout),
 //     so link those deps into the package dir before injecting.
 
-const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const REGISTRY_PATH = DSH_HOME + '/injector/registry.json'
 const NODE_MODULES = DSH_HOME + '/profiles/node_modules'
-
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
-}
 function slug(name) {
   return String(name).replace(/[^0-9a-zA-Z_.-]/g, '_')
 }
@@ -183,10 +175,7 @@ export default {
       const next = writeQueue.then(async () => {
         await registryReady
         mutator()
-        await mkdir(dirname(REGISTRY_PATH), { recursive: true })
-        const tmp = `${REGISTRY_PATH}.tmp-${process.pid}`
-        await writeFile(tmp, JSON.stringify(registry, null, 2), 'utf8')
-        await rename(tmp, REGISTRY_PATH)
+        await atomicWriteJson(REGISTRY_PATH, registry)
       })
       writeQueue = next.catch(() => {})
       return next
@@ -258,24 +247,7 @@ export default {
       return { ok: true, name, note: 're-created the entry; ESM module cache is NOT cleared yet' }
     }
 
-    function registerTool(name, description, parameters, execute) {
-      const tool = defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        async execute(args, exec) {
-          try { return await execute(args, exec) } catch (error) { return jsonText({ ok: false, error: errText(error) }) }
-        },
-      })
-      const dispose = ctx.tools.register(tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
-    }
-
-    registerTool('dev_inject_plugin',
+    registerTool(ctx, 'dev_inject_plugin',
       '把本地插件包运行时注入到正在运行的 web profile（无需重启，不改 patch/打包产物）。`dir` 必须包含一个带 `name` 和 `dsh`/bundle 声明的 package.json；Host 工具和客户端 UI 都会生效。仅主会话可用（子代理拒绝）。',
       { dir: { type: 'string', required: true, description: '插件包目录的绝对路径。' } },
       async (args, exec) => {
@@ -285,7 +257,7 @@ export default {
         return jsonText(await inject(dir))
       })
 
-    registerTool('dev_uninject_plugin',
+    registerTool(ctx, 'dev_uninject_plugin',
       '取消注入一个运行时注入的插件包：fiber 被释放、符号链接移除、注册表条目删除。无需重启。仅主会话可用（子代理拒绝）。',
       { name: { type: 'string', required: true, description: '插件包名（或其子串）。' } },
       async (args, exec) => {
@@ -300,7 +272,7 @@ export default {
         return jsonText(await uninject(match.name))
       })
 
-    registerTool('dev_injected_list',
+    registerTool(ctx, 'dev_injected_list',
       '列出每个运行时注入的插件包（名称 + 源目录）。',
       {},
       async () => {
@@ -308,7 +280,7 @@ export default {
         return jsonText({ ok: true, count: registry.plugins.length, plugins: registry.plugins })
       })
 
-    registerTool('dev_reload_package',
+    registerTool(ctx, 'dev_reload_package',
       '重建一个注入的插件条目（释放 fiber + 重新导入）。注意：Node ESM 模块缓存尚未清除，因此编辑过的文件内容可能要到加载器清掉缓存后才生效。仅主会话可用（子代理拒绝）。',
       { name: { type: 'string', required: true, description: '插件包名。' } },
       async (args, exec) => {
@@ -318,7 +290,7 @@ export default {
         return jsonText(await reload(name))
       })
 
-    registerTool('dev_plugin_status',
+    registerTool(ctx, 'dev_plugin_status',
       '显示注入器注册表以及每个在线 loader 条目（id + 名称 + 禁用状态）。',
       {},
       async () => {

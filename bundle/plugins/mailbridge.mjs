@@ -1,10 +1,9 @@
 // description: 跨会话消息桥：session_send / session_read / mailbox_check，让同一进程内的会话互相收发消息（带 begin/end 标记）。
 import { readdir, readFile, rm, writeFile, unlink, mkdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { errText, jsonText, DSH_HOME } from './lib/forge-common.mjs'
+import { registerTool } from './lib/forge-tools.mjs'
 
-const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const SESSIONS_ROOT = DSH_HOME + '/sessions'
 const PROJCACHE_PATH = DSH_HOME + '/storages/session_projcache.json'
 
@@ -12,13 +11,6 @@ let idCounter = 0
 function makeId(prefix) {
   idCounter += 1
   return prefix + '-' + Date.now().toString(36) + '-' + idCounter.toString(36) + '-' + Math.floor(Math.random() * 1679615).toString(36)
-}
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
 }
 function flattenText(blocks) {
   if (!Array.isArray(blocks)) return ''
@@ -142,28 +134,6 @@ export default {
     ctx.effect(() => () => {
       if (unit !== undefined) { try { unit.close() } catch (error) { /* already closed */ } }
     })
-
-    function registerTool(name, description, parameters, execute, timeoutMs) {
-      const tool = defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-        async execute(args, exec) {
-          try {
-            return await execute(args, exec)
-          } catch (error) {
-            return jsonText({ ok: false, error: errText(error) })
-          }
-        },
-      })
-      const dispose = ctx.tools.register(tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
-    }
 
     // ================= 子会话归档/删除（sessionmgmt） =================
     // 规则（用户拍板 2026-08-17）：
@@ -772,7 +742,7 @@ export default {
       return () => { cancelled = true }
     })
 
-    registerTool('session_list',
+    registerTool(ctx, 'session_list',
       '列出本 DSH 进程中的会话（在线与已持久化），含 id、标题、在线状态、工作区、主从关系与归档状态。默认只列未归档会话；能看到所有主会话与自己主会话下辖的全部子会话（含子子会话）。只要知道 id 或标题片段就优先用 `session_find`；只想看某个工作区（目录）下的会话时用 `workspace` 参数过滤。完整工作流见 `cross-session-mailbox` 技能。',
       {
         limit: { type: 'number', description: '最大返回会话数（默认 50，上限 200）。' },
@@ -789,7 +759,7 @@ export default {
         return jsonText({ ok: true, archivedHidden: args.includeArchived !== true, ...out })
       })
 
-    registerTool('session_list_archived',
+    registerTool(ctx, 'session_list_archived',
       '列出本主会话下辖的已归档子会话（含子子会话；这些会话已从 session_list/session_find 默认结果中隐藏，但文件仍在，可用 session_unarchive 捞出）。仅主会话可用；子代理调用会被拒绝。完整工作流见 `cross-session-mailbox` 技能。',
       { limit: { type: 'number', description: '最大返回数（默认 50，上限 200）。' } },
       async (args, exec) => {
@@ -801,7 +771,7 @@ export default {
         return jsonText({ ok: true, ...out })
       })
 
-    registerTool('session_archive',
+    registerTool(ctx, 'session_archive',
       '归档本主会话下辖的子会话（含子子会话；主代理不可被归档）：归档后这些会话不再出现在 session_list / session_find 的默认结果里，但文件保留，可随时用 session_list_archived 查看、用 session_unarchive 捞出。推荐在子会话完成且不需要再联系时归档，以保持会话列表清爽。仅主会话可用；不能归档运行中的会话。',
       {
         sessionIds: { type: 'array', items: { type: 'string' }, required: true, description: '要归档的子会话 id 数组（来自 session_list 中 parentSession 链指向本主会话的条目）。' },
@@ -815,7 +785,7 @@ export default {
         return jsonText({ ok: true, ...out })
       })
 
-    registerTool('session_unarchive',
+    registerTool(ctx, 'session_unarchive',
       '捞出（取消归档）本主会话下辖的已归档子会话（含子子会话；主代理的捞回在 WebUI 工作区进行）：恢复其在 session_list / session_find 中的可见性，文件位置与工作区记账不变。仅主会话可用。',
       {
         sessionIds: { type: 'array', items: { type: 'string' }, required: true, description: '要捞出的已归档子会话 id 数组（来自 session_list_archived）。' },
@@ -828,7 +798,7 @@ export default {
         return jsonText({ ok: true, ...out })
       })
 
-    registerTool('session_export',
+    registerTool(ctx, 'session_export',
       '把会话（默认=调用方自己）递归导出为明文：连同其下辖全部子会话（含子子会话）的消息一并导出——子代理的对话也重要。输出到 ~/.dsh/exports/<sessionId>/（index.json + 每会话一个 .md 或 .jsonl），返回文件路径与事件计数，不回灌内容。用于用户自己翻看、迁移或留档。',
       {
         sessionId: { type: 'string', description: '要导出的根会话 id（默认=调用方当前会话）。导出包含其整个子树。' },
@@ -853,7 +823,7 @@ export default {
     // （前端 sessmgr 插件 host.call('session.delete', ...)）→ svc.deleteSessions，
     // 传入 callerSessionId（页面当前会话）与 confirm:true。
 
-    registerTool('session_read',
+    registerTool(ctx, 'session_read',
       '读取另一会话的近期消息日志（仅精确读取）：用户、助手和工具消息及其文本，按时间从旧到新。用于给某会话发消息前了解它在做什么，或收集它的结果。完整工作流见 `cross-session-mailbox` 技能。',
       {
         sessionId: { type: 'string', required: true, description: '目标会话 id（来自 session_list）。' },
@@ -890,7 +860,7 @@ export default {
         return jsonText({ ok: true, sessionId, count: events.length, events: events.slice(-cap) })
       })
 
-    registerTool('session_send',
+    registerTool(ctx, 'session_send',
       '向本 DSH 进程中的另一会话发送消息。在线目标会立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。`wake: true` 时离线目标立即冷启动（加载其已持久化日志，会话重启并立刻处理该消息），而不是等它下次手动启动——用于强制睡眠中的会话现在就干活；会消耗目标会话的模型回合。wake 仅主会话可用（子代理被拒），同一目标 60 秒内最多 3 次。接收方看到的文本带 `[cross-session message from <session name> (<sessionId>)]` 前缀。完整工作流见 `cross-session-mailbox` 技能。',
       {
         targetSessionId: { type: 'string', required: true, description: '目标会话 id（来自 session_list）。' },
@@ -997,7 +967,7 @@ export default {
         return jsonText({ ok: true, delivered: 'queued', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName })
       })
 
-    registerTool('mailbox_check',
+    registerTool(ctx, 'mailbox_check',
       '检查并消费排给本会话的跨会话消息（本会话不在线期间发来的消息）。返回消息并从持久队列中移除；用户问其他会话是否发过什么时调用。完整工作流见 `cross-session-mailbox` 技能。',
       {},
       async (args, exec) => {
