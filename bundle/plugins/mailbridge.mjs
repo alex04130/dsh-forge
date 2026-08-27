@@ -521,7 +521,7 @@ export default {
           for (const sid of subtree) {
             if (sessions !== undefined && sessions.get(sid) !== undefined) liveIds.push(sid)
           }
-          if (liveIds.length > 0) { results.push({ sessionId: id, ok: false, error: 'refusing to delete: ' + liveIds.length + ' live session(s) in its subtree (' + liveIds.slice(0, 5).join(', ') + '); wait for them to finish' }); continue }
+          if (liveIds.length > 0) { results.push({ sessionId: id, ok: false, error: 'refusing to delete: ' + liveIds.length + ' session(s) in its subtree are loaded in memory (' + liveIds.slice(0, 5).join(', ') + '); this version has no unload API — restart DSH, then delete' }); continue }
           // R2 冷静期：任一子树会话 30s 内还有活动 → 拒绝（防 write-behind 复活窗口）
           const cooldownIds = [...subtree].filter((sid) => typeof lastActive[sid] === 'number' && Date.now() - lastActive[sid] < 30000)
           if (cooldownIds.length > 0) { results.push({ sessionId: id, ok: false, error: 'session(s) finished too recently (' + cooldownIds.slice(0, 5).join(', ') + '); wait 30s for pending writes to flush before deleting' }); continue }
