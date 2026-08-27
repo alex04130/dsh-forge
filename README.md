@@ -171,8 +171,21 @@ docs/       架构文档（注入方式对比、分层规则、锚定规则、ca
 
 - [Deepseek-Harness-EAC](https://github.com/zouyuxuan122/Deepseek-Harness-EAC) — DeepSeek Harness 的 Windows 桌面客户端：内置 Node.js + dsh CLI、一键启动、10 套内置皮肤（EAC：Embracing All Creation 揽尽万象）。
 
+## 借鉴与致谢
+
+只列实际参考过的项目。代码移植细节见 [NOTICE](NOTICE)。日后参考他人项目在本表加一行。idea 借鉴不写入 NOTICE，避免看起来像复制了代码。
+
+| 项目 | 关系 |
+|---|---|
+| [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard) | 代码移植（MIT）：路由核 |
+| [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) | 代码移植（MIT）：首轮锚定 |
+| [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) | 代码移植（MIT）：injector 思路 |
+| [V1ki/dsh-plugin-subscriptions](https://github.com/V1ki/dsh-plugin-subscriptions) | **idea 借鉴，未抄代码**：订阅当 LLM provider；自写走 pi-ai 路由 + OAuth token |
+| cn-humanizer（0xtresser） | 计划采用（纯 SKILL.md） |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | 宿主 |
+
 ## 许可与归因
 
-MIT。改编自 [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)、[dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)、[dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite)（均 MIT），详见 NOTICE。
+MIT。代码改编来源见上表与 NOTICE。
 
 > 历史：本项目原名 **dsh-suite**，2026-08 更名为 **dsh-forge**；`scripts/install.mjs` 的 cordis 合并标记仍保留旧拼写（`# dsh-suite:start/end`）以保证对已安装 profile 的幂等合并。
