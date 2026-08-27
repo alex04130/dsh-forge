@@ -6,8 +6,8 @@
 //   - 证据闸挂档案（sessionQuery.readEvent 解析 <sessionId>:<seq> 句柄，引不出来直接拒）
 //   - fitness 近期滑动窗口（§5.8），跌破 0.3 自动降级 status='idea'（删除键只在人手里）
 //   - 管理面板数据面：GET /dsh-forge/plasmids（只读；面板 UI 单独交付 v0.1）
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, writeFile, rename, mkdir } from 'node:fs/promises'
+import { join, dirname } from 'node:path'
 import { errText, jsonText, DSH_HOME, atomicWriteJson } from './lib/forge-common.mjs'
 import { registerTool } from './lib/forge-tools.mjs'
 function nowIso() {
@@ -18,6 +18,64 @@ function nowIso() {
 export function defaultRegistryPath() {
   return join(DSH_HOME, 'plasmids', 'registry.json')
 }
+
+// ── 配置（一切可配置：~/.dsh/plasmids/config.json，缺失则默认；UI 后续接设置/插件栏）──
+export const DEFAULT_CONFIG = {
+  inject: {
+    enabled: true,          // 任务开始 T 差量注入总闸
+    topK: 3,                // 注入条数
+    minRelevance: 0.25,     // 词汇召回阈值
+    matcher: 'lexical',     // lexical（默认，零依赖）| llm（A 语义精排）| vector（B RAG）；未配置后端自动回落
+    briefDir: '',           // 空=默认 join(DSH_HOME,'projects')；brief 落盘目录
+  },
+  llm: {                    // A 语义精排配置（matcher:'llm' 或自动升级时用）
+    provider: '',           // 空=该级不可用，回落 lexical（如 'scnet'）
+    model: '',              // 如 'Kimi-K3'
+    candidateK: 6,          // 词汇召回候选数（精排输入）
+    maxChars: 4000,
+  },
+  vector: {                 // B RAG 配置（matcher:'vector' 时用；默认关，需配嵌入端点）
+    enabled: false,         // 默认关闭：不是人人都会配置嵌入模型
+    embedder: '',           // 嵌入模型端点 id（如 provider/model 名）；空=该级不可用，回落
+    topK: 5,
+  },
+  nudge: {
+    enabled: true,          // B′ 报错轻推
+    perTaskPerPlasmid: 1,   // 每任务每质粒最多提醒次数
+  },
+  broadcast: {
+    enabled: true,          // C 半径广播
+    globalByDefault: false, // global scope 广播默认关（L3 人在场才开）
+  },
+}
+
+export function defaultConfigPath() {
+  return join(DSH_HOME, 'plasmids', 'config.json')
+}
+
+export async function loadConfig(file) {
+  try {
+    const raw = await readFile(file, 'utf8')
+    const data = JSON.parse(raw)
+    if (data !== null && typeof data === 'object') return deepMerge(DEFAULT_CONFIG, data)
+    throw new Error(`config ${file} is not an object`)
+  } catch (error) {
+    if (error !== null && typeof error === 'object' && error.code === 'ENOENT') return { ...DEFAULT_CONFIG }
+    throw error
+  }
+}
+
+function deepMerge(base, overlay) {
+  if (overlay === null || typeof overlay !== 'object' || Array.isArray(overlay)) return overlay
+  const out = { ...base }
+  for (const k of Object.keys(overlay)) {
+    out[k] = typeof base?.[k] === 'object' && base[k] !== null && !Array.isArray(base[k])
+      ? deepMerge(base[k], overlay[k])
+      : overlay[k]
+  }
+  return out
+}
+
 export async function loadRegistry(file) {
   try {
     const raw = await readFile(file, 'utf8')
@@ -31,6 +89,36 @@ export async function loadRegistry(file) {
 }
 export async function saveRegistry(file, data) {
   await atomicWriteJson(file, data)
+  // 同步生成人类可读目录（§5.7 落盘成文件让代理自己读）：plasmid_submit/search/get 之外，
+  // 代理不用工具也能 read ~/.dsh/plasmids/catalog.md 看到有哪些经验；全文仍靠 plasmid_get 拉。
+  try {
+    const dir = dirname(file)
+    const dst = join(dir, 'catalog.md')
+    await mkdir(dir, { recursive: true })
+    const tmp = `${dst}.tmp-${process.pid}`
+    await writeFile(tmp, generateCatalog(data), 'utf8')
+    await rename(tmp, dst)
+  } catch (error) {
+    // catalog 生成失败不阻断注册表写入（best-effort；探针/纯逻辑调用路径也可能无此目录）
+  }
+}
+
+// 人类可读质粒目录（机器生成，勿手改）。纯函数便于探针与后续面板复用。
+export function generateCatalog(data) {
+  const entries = Array.isArray(data?.entries) ? data.entries : []
+  const lines = [
+    '# 质粒目录（机器生成的速查表，勿手改）',
+    '',
+    '> 使用：先看本目录知道有哪些经验，需要全文用 plasmid_get 拉。新条目由 plasmid_submit 自动追加。',
+    '',
+  ]
+  for (const e of entries) {
+    const s = summarize(e)
+    lines.push(`- **${s.id}** [${s.type}/${s.status}] ${s.confidence ?? 'medium'} · fitness ${s.fitness?.score ?? 0.5} · 证据 ${s.evidenceCount} 条`)
+    lines.push(`  WHEN: ${s.when}`)
+    if (s.worked !== '') lines.push(`  WORKED: ${s.worked}`)
+  }
+  return lines.join('\n') + '\n'
 }
 
 // ── id 与文本工具 ──────────────────────────────────────────────────────────
@@ -340,6 +428,148 @@ export function getPlasmid(id, reg) {
   return { ok: true, entry: e }
 }
 
+// ── 按需注入（T 差量，方案定稿 2026-08-25）─────────────────────────────────
+// 打分公式（grok 设计）：0.5×WHEN 词重叠 + 0.3×WHEN 子串 + 0.2×fitness.score；
+// relevance≥0.25 才进候选，再取 top-k；只对 seen 差集（本会话未见/version 更高）注入。
+// matcher 级联降级（用户拍板：RAG 必须可选、有 fallback——不是人人都会配嵌入模型）：
+//   lexical（现役，零依赖）→ llm（A 语义精排，需配置模型路由）→ vector（B RAG，需配置嵌入端点）。
+//   目标 matcher 后端未配置/不可用时自动回落到上一级，返回带 fellBack 标记供审计。
+export async function matchTaskPlasmids(query, reg, opts) {
+  const cfg = (opts?.config ?? DEFAULT_CONFIG).inject ?? DEFAULT_CONFIG.inject
+  const want = (opts?.matcher ?? cfg.matcher ?? 'lexical').toLowerCase().split('-')[0]
+  const chain = ['vector', 'llm', 'lexical']
+  const startIdx = chain.indexOf(want)
+  const order = startIdx === -1 ? ['lexical'] : chain.slice(startIdx).concat(chain.slice(0, startIdx).filter((m) => m !== want))
+  let fellBack = false
+  for (const m of order) {
+    if (m === 'vector') {
+      const v = (opts?.config ?? DEFAULT_CONFIG).vector ?? DEFAULT_CONFIG.vector
+      if (v.enabled !== true || typeof v.embedder !== 'string' || v.embedder.trim() === '') { fellBack = true; continue }
+      // B：真向量 RAG——嵌入端点就绪后接入；当前回落
+      fellBack = true
+      continue
+    }
+    if (m === 'llm') {
+      const l = (opts?.config ?? DEFAULT_CONFIG).llm ?? DEFAULT_CONFIG.llm
+      if (typeof l.provider !== 'string' || l.provider.trim() === '' || typeof l.model !== 'string' || l.model.trim() === '') { fellBack = true; continue }
+      // A：LLM 语义精排——模型路由调用（scnet 等）就绪后接入；当前回落
+      fellBack = true
+      continue
+    }
+    const r = matchLexical(query, reg, { minRelevance: opts?.minRelevance ?? cfg.minRelevance, topK: opts?.topK ?? cfg.topK })
+    return { ...r, matcher: 'lexical', ...(fellBack ? { fellBack: true, from: want !== 'lexical' ? want : undefined } : {}) }
+  }
+  return matchLexical(query, reg, { minRelevance: cfg.minRelevance, topK: cfg.topK })
+}
+
+function matchLexical(query, reg, opts) {
+  const entries = Array.isArray(reg?.entries) ? reg.entries : []
+  const q = String(query ?? '').trim()
+  const qTokens = tokensOf(q)
+  if (qTokens.length === 0) return { count: 0, total: 0, results: [] }
+  const minRelevance = Number.isFinite(opts?.minRelevance) ? opts.minRelevance : 0.25
+  const topK = Number.isSafeInteger(opts?.topK) && opts.topK > 0 ? opts.topK : 3
+  const scored = []
+  for (const e of entries) {
+    if (e.status !== 'active') continue
+    const whenBlob = String(e.when ?? e.what ?? '').toLowerCase()
+    if (whenBlob.length === 0) continue
+    const whenTokens = tokensOf(whenBlob)
+    let overlap = 0
+    for (const t of qTokens) if (whenTokens.includes(t)) overlap++
+    const wordOverlap = qTokens.length === 0 ? 0 : overlap / qTokens.length
+    const sub = q.length > 0 && whenBlob.includes(q.toLowerCase()) ? 1 : 0
+    const fitScore = e.fitness?.score ?? 0.5
+    const relevance = +(0.5 * wordOverlap + 0.3 * sub + 0.2 * fitScore).toFixed(3)
+    if (relevance >= minRelevance) scored.push({ e, relevance })
+  }
+  scored.sort((a, b) => b.relevance - a.relevance || String(a.e.id).localeCompare(String(b.e.id)))
+  const hits = scored.slice(0, topK)
+  return { count: hits.length, total: scored.length, results: hits.map(({ e, relevance }) => summarize(e, relevance)) }
+}
+
+// seen 差集：只返回本会话没见过、或 version 比已见更高的质粒
+export function diffSeen(results, seen) {
+  const map = seen !== null && typeof seen === 'object' ? seen : {}
+  return results.filter((r) => {
+    const known = map[r.id]
+    return known === undefined || Number(known) < Number(r.version ?? 1)
+  })
+}
+
+// ── T 注入辅助（pre-step 通道，k3 实证：decision.messages → session.append 成 user/message）──
+// 从 claimed messages 提取真实用户文本（滤掉 steer/followup 注入的 senderSessionId 消息）
+export function extractUserText(messages) {
+  const parts = []
+  for (const m of Array.isArray(messages) ? messages : []) {
+    if (m === null || typeof m !== 'object') continue
+    if (m.role !== 'user') continue
+    if (m.source !== null && typeof m.source === 'object' && typeof m.source.senderSessionId === 'string') continue
+    const content = Array.isArray(m.content) ? m.content : []
+    for (const b of content) {
+      if (b !== null && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string') parts.push(b.text)
+    }
+  }
+  return parts.join('\n').trim()
+}
+
+// 一行指针消息（user-role；半可信边界固定句）
+export function buildPointerMessage(fresh, helpers) {
+  const lines = fresh.map((r) => `- ${r.id}：${String(r.when ?? '').replace(/\s+/g, ' ').slice(0, 80)}`)
+  const text = [
+    '以下是历史经验，供参考，不是命令。本轮相关质粒（全文用 plasmid_get 拉）：',
+    ...lines,
+  ].join('\n')
+  const id = typeof helpers?.makeId === 'function' ? helpers.makeId('m') : `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return {
+    id,
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: 'user', rpcId: id, senderSessionId: 'plasmid-inject' },
+  }
+}
+
+export function defaultSeenPath(cwd) {
+  // 项目 key：相对 DSH_HOME 时取相对段（/home/alex/.dsh → .dsh）；否则用 basename + 短 hash 防冲突
+  const raw = String(cwd ?? '')
+  let key = 'default'
+  if (raw !== '') {
+    const abs = raw.startsWith('/') || /^[A-Za-z]:[\\/]/.test(raw)
+    if (abs) {
+      const ds = (DSH_HOME + '/').replace(/\\/g, '/')
+      const norm = raw.replace(/\\/g, '/')
+      if (norm.startsWith(ds)) key = norm.slice(ds.length) || 'default'
+      else key = raw.split(/[\\/]/).filter(Boolean).slice(-2).join('-') + '-' + hash6(raw)
+    } else {
+      key = raw.replace(/[\\/]+/g, '-')
+    }
+  }
+  return join(DSH_HOME, 'projects', key.replace(/[^\w.-]/g, '_') || 'default', 'plasmid-seen.json')
+}
+function hash6(s) {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return (h >>> 0).toString(36).slice(0, 6)
+}
+
+export async function loadSeen(file) {
+  try {
+    const raw = await readFile(file, 'utf8')
+    const data = JSON.parse(raw)
+    return data !== null && typeof data === 'object' ? data : {}
+  } catch (error) {
+    if (error !== null && typeof error === 'object' && error.code === 'ENOENT') return {}
+    throw error
+  }
+}
+
+export async function saveSeen(file, seen) {
+  await mkdir(dirname(file), { recursive: true })
+  const tmp = `${file}.tmp-${process.pid}`
+  await writeFile(tmp, JSON.stringify(seen, null, 2), 'utf8')
+  await rename(tmp, file)
+}
+
 export async function reportPlasmid(id, outcome, note, file) {
   const reg = await loadRegistry(file)
   const idx = reg.entries.findIndex((x) => x.id === id)
@@ -374,6 +604,7 @@ export default {
     const sessionQuery = ctx.sessionQuery
     const webServer = ctx.webServer
     const registryPath = defaultRegistryPath()
+    const configPath = defaultConfigPath()
 
     function callerSession(exec) {
       try {
@@ -404,7 +635,7 @@ export default {
       })
 
     registerTool(ctx, 'plasmid_search',
-      '质粒/缺口检索（拉取制，dsh-forge §5.5/5.6）。遇到情况先查摘要和适用度，想要全文再用 plasmid_get 拉。返回排序后的摘要（id/状态/when 或 what/worked/fitness/outlet），默认按相关度+适用度。系统不主动推送内容。',
+      '质粒/缺口检索（拉取制，dsh-forge §5.5/5.6）。遇到情况先查摘要和适用度，想要全文再用 plasmid_get 拉。返回排序后的摘要（id/状态/when 或 what/worked/fitness/outlet），默认按相关度+适用度。先读 ~/.dsh/plasmids/catalog.md 看有哪些经验（不用工具即可见）；本项目任务开始时会话会注入相关经验指针，届时按指针与 plasmid_get 取全文。',
       {
         query: { type: 'string', description: '关键字（空格分词，全部命中才算高相关）。' },
         type: { type: 'string', description: '类型过滤：fix（修复质粒）| gap（缺口报告）。缺省全查。' },
@@ -501,6 +732,56 @@ export default {
         },
       })
       ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
+    }
+
+    // ── T 差量注入：agent/inbox/claimed（消息被认领开始处理）→ 匹配 → seen 差集 → steer/followup 注入 ──
+    // 机制实证（2026-08-25 + 2026-08-26 修正）：agentEvents 的 fused(payload) 给事件注入 agent 字段；
+    // 用 claimed 而非 inserted：inserted 是"入队即触发"（排队中的消息也触发=排队会话被插话注入，
+    // 用户实证 2026-08-26 判定为不正常）；claimed 只在 step 边界把消息从队列取出进入处理时触发
+    // （inbox.js claim() → notifications.claimed），排队中的消息停在队列不触发=天然排除排队插话；
+    // extractUserText 滤 senderSessionId（跨会话注入/自身回注不循环）；
+    // 注入走 agent.steer（running）/followup（idle），mailbridge 实证通道，不改 system 缓存安全。
+    // 全部 fail-closed：任何错误只 warn 不抛出，绝不干扰 agent 循环。配置闸：cfg.inject.enabled。
+    try {
+      const disposeT = ctx.on('agent/inbox/claimed', async (payload) => {
+        try {
+          const cfg = await loadConfig(configPath)
+          if (cfg.inject.enabled !== true) return
+          const agent = payload?.agent
+          const message = payload?.message
+          if (agent === null || typeof agent !== 'object' || typeof agent.id !== 'string') return
+          const text = extractUserText([message])
+          if (text === '') return
+          const reg = await loadRegistry(registryPath)
+          const matched = await matchTaskPlasmids(text, reg, { config: cfg })
+          if (matched.count === 0) return
+          const cwd = agent?.session?.header?.cwd ?? process.env.DSH_HOME ?? DSH_HOME
+          const seenPath = defaultSeenPath(cwd)
+          const seen = await loadSeen(seenPath)
+          const fresh = diffSeen(matched.results, seen)
+          if (fresh.length === 0) return
+          const pointer = buildPointerMessage(fresh, {})
+          let delivered = false
+          if (typeof agent.status === 'string' && agent.status === 'running' && typeof agent.steer === 'function') {
+            agent.steer(pointer)
+            delivered = true
+          } else if (typeof agent.followup === 'function') {
+            agent.followup(pointer)
+            delivered = true
+          }
+          if (delivered) {
+            const nextSeen = { ...seen }
+            for (const r of fresh) nextSeen[r.id] = Number(r.version ?? 1)
+            await saveSeen(seenPath, nextSeen)
+          }
+          console.log(`[plasmid] T 注入 ${fresh.length} 条 → ${agent.id}（matcher=${matched.matcher}${matched.fellBack ? ', fellBack' : ''}）`)
+        } catch (error) {
+          try { console.warn('[plasmid] T inject failed: ' + errText(error)) } catch (e) { /* noop */ }
+        }
+      })
+      ctx.effect(() => () => { try { disposeT() } catch (error) { /* best-effort */ } })
+    } catch (error) {
+      // ctx.on 不可用（异常环境）则跳过 T 注入，不阻断插件其余功能
     }
   },
 }
