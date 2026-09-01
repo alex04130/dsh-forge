@@ -38,7 +38,7 @@
 ### 2.3 其他注意项（不一定是漂移，升级后需核）
 - `SessionEvent.ignorable` alpha.1 移除 → **alpha.2 恢复**（我们若引用该字段，alpha.2 起安全；alpha.1 单独用有风险——直接迁 alpha.3 无此问题）。
 - 会话视图工程拆分（"面向诉求分层导入"，纯前端模块化，我们 client 插件不受影响，但**页面刷新后 client 插件若用了被拆模块要回归**——dynboot 4a 外置 + forge-shell 需在 alpha.3 下复验）。
-- 网关 WebSocket 心跳/RemoteError 统一封装：mailbridge / teamhub / modsub 的 host.call + client 侧通信是否兼容新 RemoteError 包装（**逐插件冒烟**）。
+- 网关 WebSocket 心跳/RemoteError 统一封装：**client 走 session.api.*/ctx.remote 的**（modlpk selectModel、sesmgr 官方 RPC）冒烟新 RemoteError 包装；**host.call 是包私有 RPC 不走 @Remote 网关，不冒烟**（grok 复核修正）。
 
 ## 三、子代理模型选择冲突（本项是迁移的真正决策点）
 
@@ -99,7 +99,7 @@
 
 - 长会话右导航分页轮次预览/跳转（改善我们 30+ 轮的会话体验）。
 - 会话流 token 用量精确展示（配合成本月报，数据更细）。
-- 子代理模型选择官方原生（若我们采纳 = 消掉 modsub/modlpk 两插件，动态插件进一步减）。
+- 子代理模型选择官方原生（迁移后实测三问，见 §3.4；**是否薄化 modsub 是拍板项，不预判**）。
 - 权限标签多语言（UI 中文化加分）。
 - `read_image` 无扩展名路径识别（我们视觉资产常见）。
 
@@ -109,6 +109,6 @@
 |---|---|---|
 | APIProxy 移除后 mailbridge/sessionQuery 走新网关行为变化 | 低 | 升级后冒烟 |
 | SQLite 会话数据不可读 | 低 | 升级前导出核对 |
-| 子代理模型选择与我们 modsub 重复（动态插件冗余） | 中 | 测官方能力后拍板退役 |
+| 子代理模型选择与我们 modsub 重叠（功能冗余度待测） | 中 | 迁移后按 §3.4 可证伪三问实测；**默认三件都留**，是否薄化另行拍板 |
 | client 模块拆分破坏 forge-shell/plsm 客户端 | 中 | k3 复验四 tab |
 | alpha 为 prerelease，上游可能继续 break | 中 | 只迁 dev 基线（本机），npm 发布仍走 stable；alpha 稳定后回迁补丁 |
