@@ -5,7 +5,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 let failed = 0
@@ -122,6 +122,69 @@ console.log('[check] 仓库 ↔ 运行时 auto-plugins 一致性（提示）')
   }
 }
 
+
+// —— COMPAT 断言（仅在 --compat 时运行）——
+// 升级（如 rc.2 → alpha.3）前后跑：node scripts/check.mjs --compat
+// 断言我们插件依赖的上游 API 面（L1 服务在册 / L2 方法签名），
+// L1/L2 为静态源码级断言；运行时真值尝试 dsh --dump-config（不可用时 SKIP 不阻断）。
+// L3 行为语义走探针（tmp-verify 系列），本段只输出冒烟清单。
+if (process.argv.includes('--compat')) {
+  console.log('[check] COMPAT 断言 (--compat)')
+  const manifestPath = join(ROOT, 'docs/compat-manifest.json')
+  let manifest
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+  } catch (e) {
+    failed += 1
+    console.log('  ✗ compat-manifest.json 读取失败: ' + manifestPath + '（先跑 node scripts/gen-compat-manifest.mjs）')
+    manifest = null
+  }
+  if (manifest) {
+    // 扫当前源码（与生成器同范围）：manifest 条目若在源码里找不到调用/声明 → 提示
+    const scanFiles = []
+    for (const dir of ['bundle/plugins', 'bundle/plugins/lib']) {
+      try { for (const n of await readdir(join(ROOT, dir))) if (n.endsWith('.mjs')) scanFiles.push(join(ROOT, dir, n)) } catch { }
+    }
+    try { for (const n of await readdir(join(ROOT, 'dynamic/dynplugins'))) if (n.endsWith('.js')) scanFiles.push(join(ROOT, 'dynamic/dynplugins', n)) } catch { }
+    const codes = new Map()
+    for (const f of scanFiles) codes.set(f.slice(ROOT.length + 1), await readFile(f, 'utf8'))
+    const all = [...codes.values()].join('\n')
+
+    for (const svc of manifest.services || []) {
+      // L1：服务名在源码中被提及（inject 声明或调用）
+      const l1 = new RegExp('\\b' + svc.id + '\\b').test(all)
+      console.log((l1 ? '  ✓ ' : '  ✗ ') + 'L1 服务在册: ' + svc.id + (l1 ? '' : '（源码中已无引用——上游可能移除或清单过期）'))
+      if (!l1) failed += 1
+      // L2：方法作为 <svc>.<method>( 被调用（防御式写法含 typeof 守卫亦如此）
+      for (const m of svc.methods || []) {
+        const re = new RegExp('\\b' + svc.id + '\\s*\\.\\s*' + m + '\\s*\\(')
+        const hit = re.test(all)
+        console.log((hit ? '  ✓ ' : '  ⚠ ') + 'L2 方法签名: ' + svc.id + '.' + m + (hit ? '' : '（源码未见调用——签名或依赖面已消失，升级前人工核）'))
+      }
+    }
+    for (const m of manifest.manual || []) {
+      console.log('  · 手工基线: ' + m.id + '.' + (m.methods || []).join(' .') + '【' + (m.note || '') + '】→ 人工核 [' + (m.sources || []).join('; ') + ']')
+    }
+
+    // 运行时探测：dsh --profile web --dump-config（只读组合树；本沙箱/他机可能不可用，SKIP 不阻断）
+    try {
+      const out = spawnSync('dsh', ['--profile', process.env.DSH_PROFILE || 'web', '--dump-config'], { encoding: 'utf8', timeout: 20000 })
+      if (out.status === 0 && out.stdout.length > 0) {
+        const head = out.stdout.slice(0, 400).replace(/\s+/g, ' ')
+        console.log('  · 运行时 dump-config 可取（' + out.stdout.length + ' 字节），L1 真值可按组合树人工对（原文首段: ' + head + '…）')
+      } else {
+        console.log('  · 跳过运行时探测：dsh --dump-config 不可用（' + String((out.stderr || 'exit ' + out.status).split('\n')[0]).slice(0, 160) + '）——静态断言 + L3 冒烟为准')
+      }
+    } catch (e) {
+      console.log('  · 跳过运行时探测：' + String(e.message).slice(0, 160))
+    }
+
+    console.log('  · L3 冒烟清单（升级后人工核，见 docs/COMPAT.md）：')
+    for (const item of ['sessionPersistence.inspect（离线会话读 meta/events）', 'sessionmgmt.deleteSessions（删除守卫 masterIdFromSessionId）', 'llm.listProviders/listModels（模型目录）', 'agents.get（在线会话归属）', 'tools entries（工具表）', '12 动态插件 dynboot 恢复']) {
+      console.log('    - ' + item)
+    }
+  }
+}
 
 console.log(failed === 0 ? '[check] 全部通过' : '[check] 失败 ' + failed + ' 项')
 process.exit(failed === 0 ? 0 : 1)

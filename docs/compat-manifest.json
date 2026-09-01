@@ -1,0 +1,266 @@
+{
+  "$schema": "./compat-manifest.schema.md",
+  "version": 1,
+  "updated": "2026-09-01",
+  "generatedBy": "scripts/gen-compat-manifest.mjs",
+  "services": [
+    {
+      "id": "agents",
+      "methods": [
+        "currentInitiator",
+        "get",
+        "resume"
+      ],
+      "sources": [
+        "bundle/plugins/lib/subagent-policy.mjs",
+        "bundle/plugins/mailbridge.mjs",
+        "bundle/plugins/modelroute.mjs",
+        "bundle/plugins/modeswitch.mjs",
+        "bundle/plugins/teamhub.mjs",
+        "dynamic/dynplugins/capm.host.js",
+        "dynamic/dynplugins/modlpk.host.js",
+        "dynamic/dynplugins/modpk.host.js",
+        "dynamic/dynplugins/steer.host.js",
+        "dynamic/dynplugins/subflt.host.js"
+      ]
+    },
+    {
+      "id": "attachments",
+      "methods": [
+        "saveImage",
+        "validateImage"
+      ],
+      "sources": [
+        "bundle/plugins/imgsub-bridge.mjs"
+      ]
+    },
+    {
+      "id": "dynamicCordisRunner",
+      "methods": [],
+      "sources": [
+        "bundle/plugins/dynboot.mjs",
+        "dynamic/dynplugins/capm.host.js"
+      ]
+    },
+    {
+      "id": "llm",
+      "methods": [
+        "listModels",
+        "listProviders",
+        "resolveModelInfo",
+        "stream"
+      ],
+      "sources": [
+        "bundle/plugins/lib/subagent-policy.mjs",
+        "bundle/plugins/llmrouter.mjs",
+        "bundle/plugins/modsub.mjs",
+        "bundle/plugins/plasmid.mjs",
+        "bundle/plugins/skillmanager.mjs",
+        "bundle/plugins/teamhub.mjs",
+        "dynamic/dynplugins/capm.client.js",
+        "dynamic/dynplugins/capm.host.js",
+        "dynamic/dynplugins/modlpk.host.js"
+      ]
+    },
+    {
+      "id": "loader",
+      "methods": [
+        "create",
+        "entries",
+        "remove"
+      ],
+      "sources": [
+        "bundle/plugins/injector.mjs",
+        "dynamic/dynplugins/capm.client.js",
+        "dynamic/dynplugins/capm.host.js"
+      ]
+    },
+    {
+      "id": "sessionmgmt",
+      "methods": [],
+      "sources": [
+        "bundle/plugins/mailbridge.mjs",
+        "dynamic/dynplugins/sesmgr.host.js",
+        "dynamic/dynplugins/sfind.host.js"
+      ]
+    },
+    {
+      "id": "sessionPersistence",
+      "methods": [
+        "inspect",
+        "list"
+      ],
+      "sources": [
+        "bundle/plugins/lib/subagent-policy.mjs",
+        "bundle/plugins/mailbridge.mjs",
+        "bundle/plugins/modeswitch.mjs",
+        "dynamic/dynplugins/modlpk.host.js",
+        "dynamic/dynplugins/modpk.host.js"
+      ]
+    },
+    {
+      "id": "sessionQuery",
+      "methods": [
+        "filterEvents",
+        "listEvents",
+        "readEvent",
+        "traceSession"
+      ],
+      "sources": [
+        "bundle/plugins/archive.mjs",
+        "bundle/plugins/plasmid.mjs"
+      ]
+    },
+    {
+      "id": "sessions",
+      "methods": [
+        "binding",
+        "get",
+        "open",
+        "openSubagent",
+        "refreshSubagents",
+        "setSubagentCatalogOpen"
+      ],
+      "sources": [
+        "bundle/plugins/injector.mjs",
+        "bundle/plugins/mailbridge.mjs",
+        "dynamic/dynplugins/capm.client.js",
+        "dynamic/dynplugins/capm.host.js",
+        "dynamic/dynplugins/imgsub.client.js",
+        "dynamic/dynplugins/modlpk.client.js",
+        "dynamic/dynplugins/modlpk.host.js",
+        "dynamic/dynplugins/sesmgr.client.js",
+        "dynamic/dynplugins/sesmgr.host.js",
+        "dynamic/dynplugins/steer.client.js"
+      ]
+    },
+    {
+      "id": "skills",
+      "methods": [
+        "filter",
+        "find",
+        "get",
+        "list",
+        "map",
+        "push",
+        "register",
+        "some"
+      ],
+      "sources": [
+        "bundle/plugins/llmrouter.mjs",
+        "bundle/plugins/mailbridge.mjs",
+        "bundle/plugins/skillmanager.mjs",
+        "bundle/plugins/teamhub.mjs",
+        "dynamic/dynplugins/capm.client.js",
+        "dynamic/dynplugins/capm.host.js",
+        "dynamic/dynplugins/modpk.client.js"
+      ]
+    },
+    {
+      "id": "storage",
+      "methods": [],
+      "sources": [
+        "bundle/plugins/mailbridge.mjs",
+        "bundle/plugins/teamhub.mjs"
+      ]
+    },
+    {
+      "id": "subagents",
+      "methods": [
+        "interrupt",
+        "prompt",
+        "startContinuable"
+      ],
+      "sources": [
+        "bundle/plugins/imgsub-bridge.mjs",
+        "bundle/plugins/injector.mjs",
+        "bundle/plugins/mailbridge.mjs",
+        "bundle/plugins/modsub.mjs",
+        "bundle/plugins/teamhub.mjs",
+        "dynamic/dynplugins/capm.host.js",
+        "dynamic/dynplugins/imgsub.client.js",
+        "dynamic/dynplugins/modpk.client.js",
+        "dynamic/dynplugins/sesmgr.client.js",
+        "dynamic/dynplugins/subflt.host.js"
+      ]
+    },
+    {
+      "id": "systemPrompt",
+      "methods": [
+        "section"
+      ],
+      "sources": [
+        "bundle/plugins/skillmanager.mjs"
+      ]
+    },
+    {
+      "id": "tools",
+      "methods": [
+        "register"
+      ],
+      "sources": [
+        "bundle/plugins/archive.mjs",
+        "bundle/plugins/injector.mjs",
+        "bundle/plugins/lib/forge-tools.mjs",
+        "bundle/plugins/llmrouter.mjs",
+        "bundle/plugins/mailbridge.mjs",
+        "bundle/plugins/modelroute.mjs",
+        "bundle/plugins/modeswitch.mjs",
+        "bundle/plugins/modsub.mjs",
+        "bundle/plugins/plasmid.mjs",
+        "bundle/plugins/skillmanager.mjs",
+        "bundle/plugins/teamhub.mjs",
+        "bundle/plugins/verify.mjs",
+        "dynamic/dynplugins/capm.host.js",
+        "dynamic/dynplugins/modpk.client.js",
+        "dynamic/dynplugins/plsm.client.js",
+        "dynamic/dynplugins/sesmgr.host.js"
+      ]
+    },
+    {
+      "id": "web",
+      "methods": [],
+      "sources": [
+        "bundle/plugins/injector.mjs",
+        "dynamic/dynplugins/capm.host.js",
+        "dynamic/dynplugins/modpk.client.js",
+        "dynamic/dynplugins/plsm.host.js"
+      ]
+    },
+    {
+      "id": "webServer",
+      "methods": [
+        "register"
+      ],
+      "sources": [
+        "bundle/plugins/injector.mjs",
+        "bundle/plugins/plasmid.mjs"
+      ]
+    }
+  ],
+  "manual": [
+    {
+      "id": "web",
+      "methods": [
+        "searchProviders",
+        "searchProviderId"
+      ],
+      "sources": [
+        "runtime injector: web-search-kimi-live / web-search-provider-selector（dev-plugins，未入仓库）"
+      ],
+      "note": "初始清单手工基线（P2-1）"
+    },
+    {
+      "id": "sessionmgmt",
+      "methods": [
+        "deleteSessions",
+        "masterIdFromSessionId"
+      ],
+      "sources": [
+        "dynamic/dynplugins/sesmgr.host.js（注入服务经 svc. 别名调用，静态提取无法归名）",
+        "bundle/plugins/mailbridge.mjs（deleteSessions 守卫语义）"
+      ],
+      "note": "初始清单手工基线（P2-1）"
+    }
+  ]
+}
