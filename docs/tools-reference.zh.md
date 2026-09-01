@@ -31,14 +31,24 @@
 
 ---
 
-## 工具清单速查（插件 × 工具，共 44 个）
+## 工具清单速查（插件 × 工具，共 49 个（含 gitdk 已退役工具；不含 modeswitch/modsub 的作者工具面））
 
 | 插件 | 工具 | 一句话用途 |
 | --- | --- | --- |
 | mailbridge | `session_list` | 列出本进程会话（id / 标题 / 在线状态），默认 50、上限 200 |
 | mailbridge | `session_read` | 只读另一会话近期消息日志（默认 20 条、上限 500） |
 | mailbridge | `session_send` | 给另一会话发消息：在线即时投递，离线持久排队，可 `wake:true` 冷启动 |
+| mailbridge | `session_archive` | 归档本主会话下辖的子会话（含子子会话；主代理不可被归档） |
+| mailbridge | `session_unarchive` | 捞出（取消归档）本主会话下辖的已归档子会话（含子子会话） |
+| mailbridge | `session_list_archived` | 列出本主会话下辖的已归档子会话（含子子会话；已从默认结果隐藏，文件仍在） |
+| mailbridge | `session_export` | 把会话（默认=调用方自己）递归导出为明文：连同其下辖全部子会话一并导出 |
 | mailbridge | `mailbox_check` | 收取并消费排给本会话的离线消息 |
+| gitdock | `git_status` | Show the git working tree status of the session workspace |
+| gitdock | `git_log` | Show the recent git commit history of the session workspace |
+| gitdock | `git_show` | Show one git commit in detail: full message, file stat, and patches |
+| gitdock | `git_diff` | Show the git diff of the session workspace: unstaged changes |
+
+> ⚠️ gitdock（v8）已随"gitdk 默认不加载"（2026-09-01）退役，工具保留在册待移除。
 | llmrouter | `model_list` | 列出所有 provider 路由、模型清单与 byModel 反向索引 |
 | llmrouter | `model_call` | 一次性纯文本模型借调（非子代理），流式取回完整回复 |
 | modeswitch | `switch_mode` | 会话中途切换 agent preset，能力增加时先审批 |
