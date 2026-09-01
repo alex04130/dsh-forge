@@ -68,11 +68,13 @@ for (const plugin of dynamic.plugins || []) {
 
 // —— 同步清单编号连续性 ——
 // 台账即 git 历史：relay 落地每个同步项时在 commit message 标注 #N（或 #a-#b 范围）。
-// 规则：#77 起强制连续（豁免 64-69/72 等历史缺口，见 0b4154f 范围补记与重启批次直落项）。
+// 规则：#77 起强制连续（豁免 64-69/72 等历史缺口，见 0b4154f 范围补记与重启批次直落项；#78 grok README 历史 commit 未带号，存在性以 commit body/台账为准）。
 // 提取时排除 6 位 hex 色值（如 #3b82f6/#2563eb），并对 >500 的大数免疫（GitHub issue 引用）。
 console.log('[check] 同步清单编号连续性 (git log)')
 {
   const ENFORCE_FROM = 77
+  // 历史缺号豁免：#78 grok README 历史 commit 未带号（存在性以 commit body/台账为准），64-69/72 同理见 0b4154f。
+  const EXEMPT = new Set([78])
   const subjects = execFileSync('git', ['-C', ROOT, 'log', '--all', '--pretty=%s'], { encoding: 'utf8' }).split('\n')
   const nums = new Set()
   for (const s of subjects) {
@@ -92,7 +94,7 @@ console.log('[check] 同步清单编号连续性 (git log)')
   } else {
     const max = present[present.length - 1]
     const missing = []
-    for (let n = ENFORCE_FROM; n <= max; n++) if (!nums.has(n)) missing.push('#' + n)
+    for (let n = ENFORCE_FROM; n <= max; n++) if (!nums.has(n) && !EXEMPT.has(n)) missing.push('#' + n)
     if (missing.length === 0) console.log('  ✓ #' + ENFORCE_FROM + '–#' + max + ' 连续无缺口')
     else {
       failed += 1
