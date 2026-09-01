@@ -1,0 +1,42 @@
+{
+  "currency": "CNY",
+  "usdToCny": 7.2,
+  "monthly": {
+    "report": "docs/audits/cost-report-YYYY-MM.md"
+  },
+  "plans": {
+    "kimi-coding": {
+      "note": "Kimi Coding 订阅（月费制，按 API 配额 vs 订阅授权配额折算）",
+      "kind": "subscription",
+      "monthlyFeeCny": 0.0,
+      "quotaApi": "X tokens/月（按 API 计费口径）",
+      "quotaAuth": "X tokens/月（按订阅授权口径）"
+    },
+    "xai": {
+      "note": "xAI SuperGrok/X Premium 订阅（OAuth 授权，含配额头）",
+      "kind": "subscription",
+      "monthlyFeeCny": 0.0,
+      "quotaApi": "X tokens/月",
+      "quotaAuth": "X tokens/月",
+      "quotaHeaders": {
+        "x-grok-client-mode": "example-mode",
+        "x-grok-client-version": "0.0.0"
+      }
+    },
+    "cerebras": {
+      "note": "Cerebras 按量（新 API token/billing 双口径）",
+      "kind": "pay-as-you-go",
+      "newApiTokenUsage": "X",
+      "newApiBillingUsage": "X",
+      "quotaAuth": "X",
+      "unitNote": "每 X tokens 计价示例"
+    }
+  },
+  "removed": {
+    "scnet": "已退役中转（历史成本留档）",
+    "opencode": "已退役中转（历史成本留档）"
+  },
+  "free": {
+    "deepseek-official": "免费额度（DeepSeek 官方 API）"
+  }
+}
