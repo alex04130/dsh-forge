@@ -35,22 +35,9 @@ return {
       if (typeof React.useSyncExternalStore === 'function') {
         try { React.useSyncExternalStore(subscribe, getSnap) } catch (error) { /* noop */ }
       }
-      try {
-        if (localeSvc === undefined || typeof localeSvc.getLocale !== 'function') return false
-        const snap = localeSvc.getLocale()
-        // LocaleSnapshot 形状：{ active: LocaleId, revision, locales } —— 字段是 active
-        const id = typeof snap === 'string' ? snap : (snap !== null && typeof snap === 'object' ? String(snap.active ?? '') : '')
-        return id.toLowerCase().startsWith('zh')
-      } catch (error) { return false }
+      return isZhNow()
     }
-    function isZhNow() {
-      try {
-        if (localeSvc === undefined || typeof localeSvc.getLocale !== 'function') return false
-        const snap = localeSvc.getLocale()
-        const id = typeof snap === 'string' ? snap : (snap !== null && typeof snap === 'object' ? String(snap.active ?? '') : '')
-        return id.toLowerCase().startsWith('zh')
-      } catch (error) { return false }
-    }
+    const isZhNow = () => libIsZh(ctx)
     function copy(zh) {
       return zh ? {
         running: '运行中', active: '未归档', archived: '已归档',
@@ -83,8 +70,8 @@ return {
 
     // ---------- 小组件 ----------
     function ArchiveIcon() {
-      // 图标套件定稿（ui-redraw SPEC）：档案盒=盒盖 + 盒身 + accent 抽屉拉手（可取回）；15px 固定盒
-      return h('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', style: { flex: 'none' } },
+      // 档案盒=盒盖 + 盒身 + accent 抽屉拉手（可取回）；2026-09-01 rail 统一档：24px 原生（24/17 拍板）
+      return h('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', style: { flex: 'none' } },
         h('path', { d: 'M4 4.5 h16 a0.5 0.5 0 0 1 0.5 0.5 v3 a0.5 0.5 0 0 1 -0.5 0.5 H4 a0.5 0.5 0 0 1 -0.5-0.5 V5 a0.5 0.5 0 0 1 0.5-0.5 Z' }),
         h('path', { d: 'M5.5 8.5 V18 a2 2 0 0 0 2 2 h9 a2 2 0 0 0 2-2 V8.5' }),
         h('path', { d: 'M9.5 11.8 h5', stroke: 'var(--dsw-alias-accent, #4f7cff)' }))
@@ -149,7 +136,7 @@ return {
           })
           .catch((e) => { setError(String(e && e.message !== undefined ? e.message : e)); setBusy(false) })
       }
-      return h('div', { className: 'sessmgr-overlay' },
+      return h('div', { className: 'sessmgr-overlay sessmgr-overlay-top' },
         h('div', { className: 'sessmgr-backdrop', onClick: props.onClose }),
         h('div', { className: 'sessmgr-dialog', role: 'dialog', 'aria-modal': 'true' },
           h('div', { className: 'sessmgr-dialog-head' },
@@ -359,6 +346,8 @@ return {
         const away = (event) => {
           if (!(event.target instanceof Node)) return
           if (rootRef.current !== null && rootRef.current.contains(event.target)) return
+          // 删除确认弹窗打开时不折叠归档弹窗（点击 DeleteDialog 的 pointerdown 落在 rootRef 外，误判"点击了弹窗外"）
+          if (deleteTarget !== undefined) return
           setOpen(false)
         }
         document.addEventListener('pointerdown', away)
@@ -366,7 +355,7 @@ return {
           document.removeEventListener('pointerdown', away)
           if (typeof sessions.setSubagentCatalogOpen === 'function') sessions.setSubagentCatalogOpen(sessionId, false)
         }
-      }, [open, sessionId])
+      }, [open, sessionId, deleteTarget])
 
       const flashRef = React.useRef(undefined)
       const flash = (text) => {
@@ -456,11 +445,14 @@ return {
         const away = (event) => {
           if (!(event.target instanceof Node)) return
           if (panelRef.current !== null && panelRef.current.contains(event.target)) return
+          // 删除确认弹窗打开时不折叠归档弹窗（DeleteDialog 提级 z-index 盖在本浮层上，但 DOM 在 panelRef 外——
+          // 点它会被误判为"点击弹窗外"；与 CatalogAction 同款守卫）
+          if (deleteTarget !== undefined) return
           setOpen(false)
         }
         document.addEventListener('pointerdown', away)
         return () => document.removeEventListener('pointerdown', away)
-      }, [open])
+      }, [open, deleteTarget])
 
       // 乐观移除用 TTL 撤销（GLM 审计 #4）：遮罩 10s 后自动撤除——
       // 届时宿主推送（约 4.5s）必然已到达，真值接管；捞回后再归档的会话能正常重现。
@@ -599,6 +591,8 @@ return {
 .sessmgr-danger { color: var(--dsw-alias-state-error-primary, #dc2626) !important; }
 /* 模态体系：sklui 面板（模糊背板 / 20px 圆角 / border-strong / 48px 阴影） */
 .sessmgr-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: center; align-items: center; }
+/* 删除确认弹窗（B 方案：盖在归档弹窗/任何弹窗上——用户拍板删除弹窗不能压在归档底下） */
+.sessmgr-overlay-top { z-index: 1050; }
 .sessmgr-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.42); backdrop-filter: blur(2px); }
 .sessmgr-dialog { position: relative; z-index: 1; width: 480px; max-width: calc(100vw - 48px); display: flex; flex-direction: column; overflow: hidden; border-radius: 20px; border: 1px solid var(--dsw-alias-border-strong, rgba(128,128,128,.25)); background: var(--dsw-alias-bg-layer-2, #fff); color: var(--dsw-alias-label-primary, inherit); box-shadow: 0 18px 48px rgba(0,0,0,.28); font-family: inherit; }
 .sessmgr-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px 14px; border-bottom: 1px solid rgba(128,128,128,.14); flex: none; }
