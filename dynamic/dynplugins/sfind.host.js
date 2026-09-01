@@ -42,8 +42,6 @@ return {
       },
     })
     // P-005：过渡期双跑时同名工具会撞名，守卫跳过而不是整插件起不来。
-    let dispose = undefined
-    try { dispose = harness.registerTool(ctx, tool) } catch (error) { /* 冲突守卫 */ }
-    if (dispose !== undefined) ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
+    libRegisterGuarded(harness, ctx, tool)
   },
 }

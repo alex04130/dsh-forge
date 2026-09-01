@@ -1,14 +1,6 @@
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
-}
-function textOf(collected) {
-  if (collected !== null && typeof collected === 'object' && typeof collected.text === 'string') return collected.text
-  return ''
-}
+const errText = libErrText
+const jsonText = libJsonText
+const textOf = libTextOf
 
 return {
   apply(ctx) {
@@ -49,25 +41,7 @@ return {
     }
 
     function registerTool(name, description, parameters, execute, timeoutMs) {
-      const tool = harness.defineTool({
-        name,
-        description,
-        parameters,
-        output: {
-          schema: { type: 'string' },
-          render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-        },
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-        async execute(args, exec) {
-          try {
-            return await execute(args, exec)
-          } catch (error) {
-            return jsonText({ ok: false, error: errText(error) })
-          }
-        },
-      })
-      const dispose = harness.registerTool(ctx, tool)
-      ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
+      libDefineJsonTool(harness, ctx, name, description, parameters, execute, timeoutMs)
     }
 
     registerTool('git_status',

@@ -18,6 +18,12 @@ async function restoreAll(runner, agent) {
     return
   }
   const plugins = Array.isArray(manifest.plugins) ? manifest.plugins : []
+  // 4b 薄桥 prelude：_lib.host.js/_lib.client.js 原样前置拼接到每行代码（文件缺席=空前缀，向后兼容）
+  const readLib = async (name) => {
+    try { return await readFile(DSH_HOME + '/dynplugins/' + name, 'utf8') } catch (error) { return '' }
+  }
+  const libHost = await readLib('_lib.host.js')
+  const libClient = await readLib('_lib.client.js')
   const results = []
   for (const entry of plugins) {
     if (entry === null || typeof entry !== 'object') continue
@@ -31,13 +37,15 @@ async function restoreAll(runner, agent) {
       const clientCode = typeof entry.clientFile === 'string' && entry.clientFile.length > 0
         ? await readFile(entry.clientFile, 'utf8')
         : (typeof entry.clientCode === 'string' ? entry.clientCode : '')
+      const hostFinal = libHost !== '' && hostCode !== '' ? libHost + '\n' + hostCode : hostCode
+      const clientFinal = libClient !== '' && clientCode !== '' ? libClient + '\n' + clientCode : clientCode
       const receipt = runner.define({
         plugin: { kind: 'new', idPrefix: prefix },
         name: String(entry.name ?? ''),
         purpose: String(entry.purpose ?? ''),
         code: {
-          ...(hostCode.length > 0 ? { host: hostCode } : {}),
-          ...(clientCode.length > 0 ? { client: clientCode } : {}),
+          ...(hostFinal.length > 0 ? { host: hostFinal } : {}),
+          ...(clientFinal.length > 0 ? { client: clientFinal } : {}),
         },
         sessionId: agent.id,
       })

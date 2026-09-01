@@ -4,26 +4,7 @@ return {
     const sessions = ctx.get('sessions')
     if (slots === undefined || sessions === undefined) return
 
-    // ---------- locale 检测（快照字段 active；服务缺席静默回退英文） ----------
-    function zhFromSnapshot(snap) {
-      try {
-        const id = typeof snap === 'string' ? snap : (snap !== null && typeof snap === 'object' ? String(snap.active ?? '') : '')
-        return id.toLowerCase().startsWith('zh')
-      } catch (error) { return false }
-    }
-    function isZh() {
-      try {
-        const loc = ctx.get('locale')
-        if (loc === undefined) return false
-        if (typeof loc.getSnapshot === 'function') {
-          const snap = loc.getSnapshot()
-          const id = typeof snap === 'string' ? snap : (snap !== null && typeof snap === 'object' ? snap.active : undefined)
-          if (id !== undefined && id !== null && id !== '') return String(id).toLowerCase().startsWith('zh')
-        }
-        if (typeof loc.getLocale === 'function') return zhFromSnapshot(loc.getLocale())
-        return false
-      } catch (error) { return false }
-    }
+    const isZh = () => libIsZh(ctx)
     function useZh() {
       const loc = ctx.get('locale')
       if (loc !== undefined && typeof loc.subscribe === 'function' && typeof React.useSyncExternalStore === 'function') {

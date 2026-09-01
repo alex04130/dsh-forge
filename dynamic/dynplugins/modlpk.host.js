@@ -2,10 +2,7 @@
 // 本 host 只保留「离线会话」的 deferred append；不再伪造 live 会话的 request/header；
 // idle 门删除（官方语义：运行中切换下一步生效）。
 // state 增加 live/status 字段，client 据此选路径与提示文案。
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
+const errText = libErrText
 
 function readHeaderFromLog(inspection) {
   let last = null

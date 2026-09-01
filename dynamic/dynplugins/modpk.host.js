@@ -1,7 +1,4 @@
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
+const errText = libErrText
 function pluginNamesFromText(text) {
   if (typeof text !== 'string') return []
   const names = []
