@@ -207,13 +207,38 @@ export default {
     function masterIdFromSessionId(sessionId) {
       if (typeof sessionId !== 'string' || sessionId.length === 0) return undefined
       const agent = agents !== undefined ? agents.get(sessionId) : undefined
-      if (agent === undefined) return undefined
-      let header = undefined
-      try { header = agent.session !== undefined ? agent.session.header : undefined } catch (error) { header = undefined }
-      const origin = header !== undefined ? header.origin : undefined
-      const parent = header !== undefined ? header.parentSession : undefined
-      if (origin === 'subagent' || (typeof parent === 'string' && parent.length > 0)) return typeof parent === 'string' ? parent : undefined
-      return sessionId
+      if (agent !== undefined) {
+        let header = undefined
+        try { header = agent.session !== undefined ? agent.session.header : undefined } catch (error) { header = undefined }
+        const origin = header !== undefined ? header.origin : undefined
+        const parent = header !== undefined ? header.parentSession : undefined
+        if (origin === 'subagent' || (typeof parent === 'string' && parent.length > 0)) return typeof parent === 'string' ? parent : undefined
+        return sessionId
+      }
+      // 离线会话（用户删除废弃会话场景）：内存无 agent → 回退读持久化头部判断归属。
+      // 主会话（无 parentSession）返回自己；子会话返回其 parentSession；读不到（无持久化/无法解析）返回 undefined（fail-closed）。
+      // 优先：events 里 type:session 首行（有 origin/parentSession；废弃会话常缺 meta.json 但日志必有 session 头行）。
+      // 兜底：inspection.meta.parentSession。
+      if (sessionPersistence === undefined || typeof sessionPersistence.inspect !== 'function') return undefined
+      return sessionPersistence.inspect(sessionId).then((inspection) => {
+        if (inspection !== null && typeof inspection === 'object') {
+          const events = Array.isArray(inspection.events) ? inspection.events : []
+          for (const event of events) {
+            if (event === null || typeof event !== 'object') continue
+            if (event.type !== 'session') continue
+            const parent = typeof event.parentSession === 'string' ? event.parentSession : ''
+            const origin = String(event.origin ?? '')
+            if (origin === 'subagent' || parent.length > 0) return parent.length > 0 ? parent : undefined
+            return sessionId
+          }
+          const meta = inspection.meta
+          const metaParent = typeof meta?.parentSession === 'string' ? meta.parentSession : ''
+          if (metaParent.length > 0) return metaParent
+          // events 有非 session 元数据但无 session 头行；若 meta 也无 parent 且 events 非空，保守：无法判定 → 对无 meta 的"幽灵"会话（只有首行/无 parent）仍返回自己？
+          // 谨慎：找不到 session 头行且无 meta parent → 返回 undefined（fail-closed，拒删）
+        }
+        return undefined
+      }).catch(() => undefined)
     }
 
     async function listSessionHeaders() {
@@ -281,6 +306,8 @@ export default {
     }
 
     const svc = {
+      // 挂载 masterIdFromSessionId（此前只定义了函数但没挂进 svc——删除守卫调用时 typeof 检查一直取不到 → 拒删）
+      masterIdFromSessionId,
       async list({ limit = 50, workspace, includeArchived = false, masterId }) {
         const cap = Math.min(Math.max(1, Math.floor(limit)), 200)
         const { headers, descendantsOf } = await headerIndex()
@@ -869,8 +896,11 @@ export default {
       },
       async (args, exec) => {
         const targetId = String(args.targetSessionId)
-        const body = String(args.text)
+        let body = String(args.text)
         if (body.length === 0) return jsonText({ ok: false, error: 'text must not be empty' })
+        // P3 消息长度上限：防大 payload 撑爆目标会话上下文/落盘（超出截断并标记）
+        const MAX_BODY = 200000
+        if (body.length > MAX_BODY) body = body.slice(0, MAX_BODY) + '\n\n...(truncated: 原 ' + String(body.length) + ' 字符超上限)'
         const from = callerId(exec, agents)
         const fromName = await callerName(from)
         const senderLabel = fromName !== null ? fromName + ' (' + from + ')' : (from ?? 'unknown')
