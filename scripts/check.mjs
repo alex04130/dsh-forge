@@ -73,8 +73,9 @@ for (const plugin of dynamic.plugins || []) {
 console.log('[check] 同步清单编号连续性 (git log)')
 {
   const ENFORCE_FROM = 77
-  // 历史缺号豁免：#78 grok README 历史 commit 未带号（存在性以 commit body/台账为准），64-69/72 同理见 0b4154f。
-  const EXEMPT = new Set([78])
+  // 历史缺号豁免（仅 ENFORCE_FROM 下调时生效：64-69/72 在 #77 基线以下不参与，见 0b4154f 与重启批次直落项）：
+  // #78 已由勘误 commit 标号（docs 编号勘误，db0892d），不再需豁免。
+  const EXEMPT = new Set([64, 65, 66, 67, 68, 69, 72])
   const subjects = execFileSync('git', ['-C', ROOT, 'log', '--all', '--pretty=%s'], { encoding: 'utf8' }).split('\n')
   const nums = new Set()
   for (const s of subjects) {
