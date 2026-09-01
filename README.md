@@ -160,12 +160,12 @@ bundle/     host 插件（cordis.patch.yml + plugins/*.mjs + @local 客户端包
 dynamic/    动态插件清单（auto-plugins.json，12 条）
 presets/    router-standard agent 预设
 scripts/    install.mjs / check.mjs / verify-plsm.cjs（plsm 面板 playwright 探针，维护者本机）
-docs/       roadmap.md（总体规划/路线图）+ 架构文档（注入方式对比、分层规则、锚定规则、cache 规则、npm 升级风险、自研 subagent provider 设计）；工具详细定义含 archive / verify / plasmid
+docs/       roadmap.md（总体规划/路线图）+ audits/（审计与评估报告）+ 架构文档（注入方式对比、分层规则、锚定规则、cache 规则、npm 升级风险、自研 subagent provider 设计）；工具详细定义含 archive / verify / plasmid
 ```
 
 ## 架构文档
 
-`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。经验体系（档案 / 质粒 / 缺口 / 验货）的工具级定义见 [工具详细定义参考](docs/tools-reference.zh.md)。另见 [总体规划 / 路线图](docs/roadmap.md)、[工具描述规范（中文化）](docs/tool-descriptions.zh.md)、[验收测试方法论](docs/VERIFICATION.md)、[跨平台验证指南](docs/PLATFORM-VERIFY.md)、[多代理协作涌现档案](docs/EMERGENCE.md)、[自研 subagent provider 设计（提案）](docs/SUBAGENT-PROVIDER.md)、[协作约定](CONTRIBUTING.md)。运行时协作方法论与排班在 `~/.dsh/COLLAB-METHOD.md`、`~/.dsh/ROSTER.md`、`~/.dsh/UI-LESSONS.md`（不进本仓库）。
+`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。经验体系（档案 / 质粒 / 缺口 / 验货）的工具级定义见 [工具详细定义参考](docs/tools-reference.zh.md)。另见 [总体规划 / 路线图](docs/roadmap.md)、[Alpha 迁移预评估（0.1.2-alpha.3 基线）](docs/audits/alpha-migration-eval-2026-09-01.md)、[工具描述规范（中文化）](docs/tool-descriptions.zh.md)、[验收测试方法论](docs/VERIFICATION.md)、[跨平台验证指南](docs/PLATFORM-VERIFY.md)、[多代理协作涌现档案](docs/EMERGENCE.md)、[自研 subagent provider 设计（提案）](docs/SUBAGENT-PROVIDER.md)、[协作约定](CONTRIBUTING.md)。运行时协作方法论与排班在 `~/.dsh/COLLAB-METHOD.md`、`~/.dsh/ROSTER.md`、`~/.dsh/UI-LESSONS.md`（不进本仓库）。
 
 ## 友情链接
 
