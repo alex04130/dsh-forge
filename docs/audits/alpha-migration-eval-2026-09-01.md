@@ -26,7 +26,9 @@
 ### 2.1 APIProxy 移除 → @Remote 网关（alpha.1 "其他变更"）
 - alpha.1：*"旧版调用接口 APIProxy 已迁移并移除，请统一使用 @Remote 网关"*。
 - 本地检查：`profiles/web/plugins/*.mjs` / `dynplugins/*.js` 逐文件 grep `apiproxy|APIProxy` —— **零命中**（唯一相关是 mailbridge.mjs:80 注释提及 workspaceRegistry 别名，非 APIProxy 调用）。
-- **结论：本地插件不依赖 APIProxy，移除无影响。**（风险低，但升级后需跑一次跨会话消息 + 会话列表冒烟，确认 mailbridge/sessionQuery 走新网关正常。）
+- **⚠️ 修正（grok 复核）**：**host.call ≠ APIProxy**。harness.handle / host.call 是动态插件**包私有 RPC**，不走 @Remote 网关——mailbridge/teamhub/modsub 的 host.call **不受** RemoteError 包装影响，**不该列进 RemoteError 冒烟**。
+- **真可能碰到 RemoteError 包装的**：client 走 `session.api.*` / `ctx.remote` 的（modlpk 的 selectModel、若有官方 RPC 的 sesmgr）——**冒烟这些**，不要冒烟 host.call。
+- **结论**：本地静态行不依赖旧类名；冒烟范围修正确认。
 
 ### 2.2 SQLite Session 持久化后端移除（alpha.3 "其他变更"）
 - alpha.3：*"移除可选的 SQLite Session 持久化后端；已有内容不会删除，请使用旧版本导出"*。
@@ -52,16 +54,20 @@
 - **modelroute**：子代理模型路由策略（与 dsh-host-apiproxy 的 model-selection rewrite 是协作关系，注释自证：*"parent's CREATION options, but dsh-host-apiproxy's per-agent model-selection"*——我们**挂在官方代理的 rewrite 链上**，不是绕过）。
 - 模型管理 UI（capm 模型 tab）读的是官方 `llm.listProviders/listModels/resolveModelInfo`——**API 面兼容**。
 
-### 3.3 冲突判定
-- **modsub**：与官方 spawn 模型选择**重复**。官方上线后，我们的 spawn_model_subagent 要么退役（用官方 spawn_subagent），要么保留为"带提权审批语义"的补充（官方 spawn 的授权范围是否含我们的提权链未证）。
-- **modlpk**：官方设置页已有"模型选择"（模型设置页添加 provide 登录配置 + 模型选择器）。modlpk 的"持久化回退"语义若官方覆盖则退役；不覆盖则保留。
-- **modelroute**：**不冲突**（与官方 rewrite 链协作），迁移候选保留。
-- **capm 模型 tab**：读官方 API 面，兼容，可保留（提供订阅登录 + 默认模型 + provider 目录 UI）。
+### 3.3 冲突判定（修正版，grok 复核 2026-09-01）
+- **结论：三件套全部保留，不预判退役。**
+- **modsub**：per-call 选参部分与官方重叠，但**提权链/mode/sandbox 官方没有**——官方"授权范围选择"是**预授权允许名单**（`modelSelectionSettings`，顶层 Session 采样 Host 偏好，精确 provider/model 名单），**不是**"比父 live 升档弹审批"；modsub 精华=默认继承父（账单不静默变）+ collectModelEscalations（同系列升档/跨系列）+ preset 能力面 + sandbox 加宽 → approval allowed-once。**至多**升完后若官方 schema 已有 per-call 三字段，考虑薄化为"官方 spawn + 我们只留审批/mode/sandbox"——那是拍板项，不是现在的结论。
+- **modlpk**：官方几乎不覆盖——官方 ModelSelect 仍拒绝 addressed-subagent（rc.2 README 原文）；alpha 的选参是 **subagent 工具 schema**，不是子会话 composer。与 spawn 选参**不是同一层**，保留。
+- **modelroute**：保留（与官方是协作/补洞）。create 时 live 继承可能被官方部分吃掉（官方隐式子取"父 latest logged request，否则父创建 options"——create 时可盖戳，针对 Problem 1 一半），但 request 时钳制（空白子第一请求是否仍回全局默认未证）+ plan 计费重写（官方无）仍是我们的。**未核之前不标"覆盖"**。
+- **⚠️ 修正**：原文"全覆盖则 modsub/modlpk 退役（动态插件 10→8）"**作废**——grok 明确"禁止全覆盖→退役预判"。
 
-### 3.4 建议（呈用户拍板）
-1. **迁 alpha.3 后测官方子代理模型选择**：spawn_subagent 在授权范围内选 provider/model 是否覆盖我们使用场景（开/关能力、默认继承、提权审批）。
-2. 若全覆盖 → **modsub/modlpk 退役**（动态插件 12→10→进一步减，呼应"动态插件尽量减"）；modelroute 保留；spawn_model_subagent 从工具面移除（或保留薄兼容层）。
-3. 若不覆盖（如提权审批语义缺失）→ 保留 modsub 薄改（只留提权部分），移除重复的模型/effort 参数。
+### 3.4 建议（修正版）
+1. 迁 alpha.3 后**实测官方子代理模型选择**，写成三条**可证伪**（不是"开/关/指定 provider"糊成一项）：
+   - ① 隐式 spawn（不传 model）：子第一轮是父 **live** 还是**全局默认**？（空白子 selectionFor 是否仍回全局默认）
+   - ② 显式升档：是否**只靠允许名单**、有无审批弹窗？（官方允许名单 vs 我们的 allowed-once 审批）
+   - ③ 父 spawn 后切模型：隐式子下一轮**跟不跟**父 live？（官方盖戳 vs modelroute 每轮跟父）
+2. 三条测完**再拍板**是否薄化 modsub；**默认假设三件都留**。
+3. modsub 薄化属于**拍板项**，不是迁移评估能预定的结论。
 
 ## 四、升级路径（沿用 0.1.1-rc.2 预案 + alpha 增量）
 
@@ -77,7 +83,10 @@
 - [ ] capm 模型页（llm.listProviders/listModels 在新版本别名是否变——**核 resolveModelInfo 签名**）。
 - [ ] mailbridge / teamhub / modsub 跨会话通信冒烟（RemoteError 包装兼容）。
 - [ ] forge-shell + plsm + capm 四 tab 渲染（client 模块拆分回归）。
-- [ ] 官方子代理模型选择实测（开/关/指定 provider/提权审批）。
+- [ ] 官方子代理模型选择实测（grok 修正：写成三条**可证伪**，不糊成"开/关/指定 provider"）：
+  - [ ] ① 隐式 spawn（不传 model）：子第一轮是父 **live** 还是**全局默认**？（空白子 selectionFor 是否仍回全局默认）
+  - [ ] ② 显式升档：是否**只靠允许名单**、有无审批弹窗？（官方 allowed list vs 我们 allowed-once）
+  - [ ] ③ 父 spawn 后切模型：隐式子下一轮**跟不跟**父 live？（官方盖戳 vs modelroute 每轮跟父）
 - [ ] web 搜索 provider（deepseek-official+kimi-coding 并存 + selector set）。
 - [ ] 结论回 relay 记档（同步号）。
 
