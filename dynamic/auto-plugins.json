@@ -48,8 +48,8 @@
     },
     {
       "idPrefix": "stfx",
-      "disabled": false,
-      "name": "settingsfix Settings 行对齐 + cordis 面板锚定",
+      "disabled": true,
+      "name": "settingsfix Settings 行对齐 + cordis 面板锚定（已并入 fshell，退役）",
       "purpose": "设置行与侧栏 badge 对齐（49px 高 / 12px 左缘 / 256px 宽 / 14px 图标），cordis 动态面板 bottom 128px→112px。",
       "hostFile": "/home/alex/.dsh/dynplugins/stfx.host.js",
       "clientFile": "/home/alex/.dsh/dynplugins/stfx.client.js"

@@ -137,14 +137,21 @@ return {
     }
 
     // ---------- 壳样式（徽章 49px 壳规格与弹窗骨架沿用 UI-LESSONS 定版；内容样式归各功能） ----------
+    // 2026-09-01 统一档（用户拍板 24px-17px）：badge 图标 24px（覆盖各功能 icon 组件的 width 属性，CSS 优先）、
+    // 文字 17px；原 stfx（settingsfix 独立插件）的 Settings 行对齐 + cordis 面板锚定规则并入此处，stfx 退役。
     styles.insert(`
 .fsh-entry { width: 100%; order: -1; margin-bottom: 8px; }
 /* PoC 期接管组尾间距：壳（含质粒）是五徽章组最后一个，sessmgr 的组尾 margin 归零（原 plsm CSS 平移） */
 .sessmgr-arch-entry { margin-bottom: 0 !important; }
-.fsh-badge { box-sizing: border-box; width: 100%; height: 49px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 6px; border: 0; border-radius: 12px; cursor: pointer; font-size: 14px; font-family: inherit; color: var(--dsw-alias-label-primary, inherit); background: transparent; }
+.fsh-badge { box-sizing: border-box; width: 100%; height: 49px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 6px; border: 0; border-radius: 12px; cursor: pointer; font-size: 17px; font-family: inherit; color: var(--dsw-alias-label-primary, inherit); background: transparent; }
+.fsh-badge svg { width: 24px !important; height: 24px !important; }
 .fsh-badge:hover { background: var(--dsw-alias-bg-hover, rgba(128,128,128,.08)); }
 .fsh-badge-label { text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow: hidden; }
-.fsh-count { margin-left: auto; font-weight: 500; font-size: 11px; color: var(--dsw-alias-label-tertiary, #9aa0aa); }
+.fsh-count { margin-left: auto; font-weight: 500; font-size: 12px; color: var(--dsw-alias-label-tertiary, #9aa0aa); }
+/* 原 stfx：Settings 行对齐（49px 高 / 256px 宽 / 图标 24px 统一档）+ cordis 面板锚定 */
+[class*="VOzbGW_trigger"] { box-sizing: border-box; margin: 8px 0 0 !important; padding: 0 8px 0 6px !important; width: 256px !important; height: 49px !important; border-radius: 12px !important; }
+[class*="VOzbGW_trigger"] [data-slot="settings.trigger"] svg { width: 24px !important; height: 24px !important; }
+[class*="Nqubda_panel"] { bottom: 112px !important; }
 .fsh-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: center; align-items: center; }
 .fsh-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.42); backdrop-filter: blur(2px); }
 .fsh-panel { position: relative; z-index: 1; width: 640px; max-width: calc(100vw - 48px); max-height: min(680px, calc(100vh - 48px)); display: flex; flex-direction: column; overflow: hidden; border-radius: 20px; border: 1px solid var(--dsw-alias-border-strong, rgba(128,128,128,.25)); background: var(--dsw-alias-bg-layer-2, #fff); color: var(--dsw-alias-label-primary, inherit); box-shadow: 0 18px 48px rgba(0,0,0,.28); font-family: inherit; }
@@ -155,6 +162,13 @@ return {
 .fsh-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .fsh-foot { flex: none; padding: 10px 24px 14px; border-top: 1px solid rgba(128,128,128,.14); font-size: 11px; color: var(--dsw-alias-label-tertiary, #9aa0aa); }
 .fsh-crashed { padding: 34px 24px; text-align: center; font-size: 13px; color: var(--dsw-alias-state-error-primary, #dc2626); }
+/* 2026-09-01 rail 归一补漏（24/17 拍板）：sessmgr 归档行不是 fsh-badge（直挂 slot），补同规格；官方 Cordis Plugin 徽章强制拉伸同档。自家 plugmgr「插件」徽章：功能已并入能力面板，插件本体已从 cordis.patch.yml 退役（2026-09-01），此 CSS 为过渡保留（本体卸载后自然落空）。 */
+.sessmgr-arch-entry { font-size: 17px !important; }
+.sessmgr-arch-btn { font-size: 17px !important; }
+.sessmgr-arch-entry svg { width: 24px !important; height: 24px !important; }
+[class*="Nqubda_badge"] { font-size: 17px !important; }
+[class*="Nqubda_badge"] svg { width: 24px !important; height: 24px !important; }
+.plugmgr-badge, [class*="plugmgr_badge"] { display: none !important; }
 `)
 
     slots.inject('sidebar.footer.action', () => slots.register(
