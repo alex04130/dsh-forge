@@ -22,10 +22,10 @@
 - **行号约定**：文中括号注明源文件与行号（如 `(mailbridge.mjs:192)`），行号以本次生成时读取的文件为准；`auto-plugins.json` 的 `hostCode` 是 JSON 字符串，行号指该字符串按 `\n` 展开后的行号（即文中 `hostCode L41` 表示该插件 hostCode 内容的第 41 行）。
 - **标注约定**：凡代码行为与描述/预期不一致、或代码里没有依据的细节，一律标注「（待审校确认）」；不编造代码里没有的行为。
 - **通用约定（所有工具）**：
-  - 全部 44 个工具的输出都是**一个 pretty-print 的 JSON 字符串**（`jsonText` = `JSON.stringify(value, null, 2)`），不是结构化对象。
+  - 全部工具的注册/输出口径见速查表（当前 52 个 = 49 个机器索引 + 3 个作者工具：switch_mode / session_mode / spawn_model_subagent）。输出均为**一个 pretty-print 的 JSON 字符串**（`jsonText` = `JSON.stringify(value, null, 2)`），不是结构化对象。
   - 每个工具都包了一层统一异常处理（各插件的 `registerTool` 包装或 `defineTool` 内的 try/catch）：`execute` 抛出的任何异常转为 `{"ok": false, "error": "<message>"}`。
   - 除 `dev_inject_plugin` 与 plasmid 系列（`plasmid_submit` / `gap_report` 的接受/拒绝形态用 `accepted` + `gate`、`plasmid_search` 无 `ok` 外壳，见 plasmid 一节）外，各工具明确失败路径均返回 `ok: false` 并带 `error`（或 `cancelled`）字段，见各小节「边界与失败」。
-  - 注册形态分两种：composition 插件（mailbridge / llmrouter / teamhub / injector / modelroute / modsub / modeswitch / archive / verify / plasmid）直接用 `defineTool` 注册；auto-plugins 三条动态插件用 `harness.defineTool` + `harness.registerTool(ctx, tool)` 注册（见附录）。
+  - 注册形态分两种：composition 插件（mailbridge / llmrouter / teamhub / injector / modelroute / modsub / modeswitch / archive / verify / plasmid）直接用 `defineTool` 注册；auto-plugins 动态插件（4a 迁移后代码外置 dynplugins/，hostFile/clientFile 路径引用）用 `harness.defineTool` + `harness.registerTool(ctx, tool)` 或薄桥守卫 `libRegisterGuarded` 注册（见附录）。
 
 - 每个工具小节新增「**工具提示词（模型可见的 description，原文）**」字段：收录该工具注册时传给 `defineTool` 的 `description` 原文（即模型看到的工具提示词）；参数级提示词见各参数表的「说明」列（已尽量原文收录）。
 
