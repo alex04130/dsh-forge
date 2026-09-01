@@ -24,13 +24,20 @@ async function restoreAll(runner, agent) {
     if (entry.disabled === true) continue // opt-out entries stay dormant by default
     const prefix = String(entry.idPrefix ?? '')
     try {
+      // 4a 路径引用：hostFile/clientFile 优先（代码回真文件），hostCode/clientCode 内联字符串向后兼容
+      const hostCode = typeof entry.hostFile === 'string' && entry.hostFile.length > 0
+        ? await readFile(entry.hostFile, 'utf8')
+        : (typeof entry.hostCode === 'string' ? entry.hostCode : '')
+      const clientCode = typeof entry.clientFile === 'string' && entry.clientFile.length > 0
+        ? await readFile(entry.clientFile, 'utf8')
+        : (typeof entry.clientCode === 'string' ? entry.clientCode : '')
       const receipt = runner.define({
         plugin: { kind: 'new', idPrefix: prefix },
         name: String(entry.name ?? ''),
         purpose: String(entry.purpose ?? ''),
         code: {
-          ...(typeof entry.hostCode === 'string' && entry.hostCode.length > 0 ? { host: entry.hostCode } : {}),
-          ...(typeof entry.clientCode === 'string' && entry.clientCode.length > 0 ? { client: entry.clientCode } : {}),
+          ...(hostCode.length > 0 ? { host: hostCode } : {}),
+          ...(clientCode.length > 0 ? { client: clientCode } : {}),
         },
         sessionId: agent.id,
       })
