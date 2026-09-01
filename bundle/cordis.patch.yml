@@ -51,3 +51,14 @@
 
     - id: plugmgr
       name: '@local/dsh-plugmgr'
+
+    # 经验体系（#71 拍板）：项目档案 / 言行一致检查器 / 最薄质粒。
+    # plsm 面板不进 insert，随动态清单（auto-plugins.json）走。
+    - id: archive
+      name: ./plugins/archive.mjs
+
+    - id: verify
+      name: ./plugins/verify.mjs
+
+    - id: plasmid
+      name: ./plugins/plasmid.mjs

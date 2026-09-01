@@ -9,7 +9,7 @@ Topics: `dsh-plugin` `deepseek-harness` `dsh` `cordis` · 更多社区插件见 
 
 ## 这是什么
 
-dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-patch 任何 npm 包。当前规模：host 插件 15 个 / 动态插件 12 条 / 模型工具 48 个 / npm latest `@dsh-forge/bundle` **0.1.4**。
+dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-patch 任何 npm 包。当前规模：host 插件 15 个 / 动态插件 12 条 / 模型工具 49 个 / npm latest `@dsh-forge/bundle` **0.2.0**。
 
 核心能力：
 
@@ -22,7 +22,7 @@ dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-pa
 | **会话管理** | mailbridge：列表 / 查找 / 归档 / 捞回 / 导出（含子树、工作区过滤）；sesmgr 侧栏「已归档」面板（v8，SVG 徽章 + 窄轨 wide 契约） |
 | **档案 · 质粒 · 验货** | archive 证据句柄（`sessionId:seq`）；plasmid 自荐 / 检索 / fitness + `gap_report`；`verify_claim` 对 git-commit / file / text-in-file 显式验货 |
 
-协作与编排层（15 个 host 插件）。`bundle/cordis.patch.yml` 与 npm 0.1.4 的 `cordis.npm.yml` **insert 仍为 12 行**；`archive` / `verify` / `plasmid` 源码已在 `bundle/plugins/`，生产经 injector 热加载，下次发版写入 insert（#71 拍板；plsm 不进 insert，随动态清单走）。
+协作与编排层（15 个 host 插件）。`bundle/cordis.patch.yml` 与 npm 0.2.0 的 `cordis.npm.yml` **insert 15 行**；`archive` / `verify` / `plasmid` 自 0.2.0 写入 insert（#71 拍板；plsm 不进 insert，随动态清单走）。
 
 - `mailbridge` — 跨会话邮箱 + 会话管理：session_list / session_find（sfind 委托）/ session_list_archived / session_archive / session_unarchive / session_export / session_read / session_send / mailbox_check
 - `skillmanager` — 持久技能注册表（增删启停、默认注入）；模型工具与设置页 UI 由动态插件 sklui 挂在同一服务上
@@ -52,7 +52,7 @@ DSH 的插件生态和 Minecraft 的 mod 生态很像：一个稳定的宿主（
 dsh plugin --profile web add @dsh-forge/bundle
 ```
 
-`@dsh-forge/bundle` 声明官方 `dsh.bundle.patch` manifest，`dsh plugin add` 会自动把它注册进 profile 的 patch 层；装完重启 DSH（`dsh web`）即可。需要 **0.1.4+**（0.1.3 及更早版本在 npm 路径下 boot 失败，为已知历史 bug）。npm 0.1.4 的 insert 不含 archive / verify / plasmid：这三件已随包发布源码，生产侧需 injector 或下次发版写入 insert 后才随 `dsh plugin add` 自动挂上。
+`@dsh-forge/bundle` 声明官方 `dsh.bundle.patch` manifest，`dsh plugin add` 会自动把它注册进 profile 的 patch 层；装完重启 DSH（`dsh web`）即可。需要 **0.1.4+**（0.1.3 及更早版本在 npm 路径下 boot 失败，为已知历史 bug）。npm 0.2.0 的 insert 已含 archive / verify / plasmid：`dsh plugin add` 后随重启自动挂上。
 
 **可选组件：任务感知路由 preset（手动复制）**
 
@@ -129,7 +129,7 @@ Windows / macOS / Linux 全平台可用：
 
 ## 工具定义
 
-本套件注册的全部模型工具，按插件分组（48 个；gitdk 四工具已禁用，不计）：
+本套件注册的全部模型工具，按插件分组（49 个；gitdk 四工具已禁用，不计）：
 
 | 插件 | 工具与用途 |
 |---|---|
@@ -160,12 +160,12 @@ bundle/     host 插件（cordis.patch.yml + plugins/*.mjs + @local 客户端包
 dynamic/    动态插件清单（auto-plugins.json，12 条）
 presets/    router-standard agent 预设
 scripts/    install.mjs / check.mjs / verify-plsm.cjs（plsm 面板 playwright 探针，维护者本机）
-docs/       架构文档（注入方式对比、分层规则、锚定规则、cache 规则、npm 升级风险、自研 subagent provider 设计）；工具详细定义含 archive / verify / plasmid
+docs/       roadmap.md（总体规划/路线图）+ 架构文档（注入方式对比、分层规则、锚定规则、cache 规则、npm 升级风险、自研 subagent provider 设计）；工具详细定义含 archive / verify / plasmid
 ```
 
 ## 架构文档
 
-`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。经验体系（档案 / 质粒 / 缺口 / 验货）的工具级定义见 [工具详细定义参考](docs/tools-reference.zh.md)。另见 [工具描述规范（中文化）](docs/tool-descriptions.zh.md)、[验收测试方法论](docs/VERIFICATION.md)、[跨平台验证指南](docs/PLATFORM-VERIFY.md)、[多代理协作涌现档案](docs/EMERGENCE.md)、[自研 subagent provider 设计（提案）](docs/SUBAGENT-PROVIDER.md)、[协作约定](CONTRIBUTING.md)。运行时协作方法论与排班在 `~/.dsh/COLLAB-METHOD.md`、`~/.dsh/ROSTER.md`、`~/.dsh/UI-LESSONS.md`（不进本仓库）。
+`docs/ARCHITECTURE.md` 记录全部设计决策：八种注入方式对比、host/preset/dynamic 分层规则、首轮锚定规则、prompt cache 规则、npm 升级风险清单、已知坑（勿在 React 插槽搬 DOM 等）。经验体系（档案 / 质粒 / 缺口 / 验货）的工具级定义见 [工具详细定义参考](docs/tools-reference.zh.md)。另见 [总体规划 / 路线图](docs/roadmap.md)、[工具描述规范（中文化）](docs/tool-descriptions.zh.md)、[验收测试方法论](docs/VERIFICATION.md)、[跨平台验证指南](docs/PLATFORM-VERIFY.md)、[多代理协作涌现档案](docs/EMERGENCE.md)、[自研 subagent provider 设计（提案）](docs/SUBAGENT-PROVIDER.md)、[协作约定](CONTRIBUTING.md)。运行时协作方法论与排班在 `~/.dsh/COLLAB-METHOD.md`、`~/.dsh/ROSTER.md`、`~/.dsh/UI-LESSONS.md`（不进本仓库）。
 
 ## 友情链接
 

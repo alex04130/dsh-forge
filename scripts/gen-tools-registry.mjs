@@ -10,7 +10,9 @@ import { homedir } from 'node:os'
 const HOME = process.env.DSH_HOME || homedir() + '/.dsh'
 const PLUGINS = join(HOME, 'profiles/web/plugins')
 const DYN = join(HOME, 'auto-plugins.json')
-const OUT = join(HOME, 'docs/tools-registry.md')
+// --out <path>：覆盖输出路径（check.mjs 再生成仓库镜像时用）；默认运行时 docs
+const outIdx = process.argv.indexOf('--out')
+const OUT = outIdx !== -1 && typeof process.argv[outIdx + 1] === 'string' ? process.argv[outIdx + 1] : join(HOME, 'docs/tools-registry.md')
 
 // 域映射（分域合并的索引面：工具属于哪个域，合并前用插件名，合并后自然归位）
 const DOMAIN = {
@@ -39,14 +41,24 @@ for (const f of (await readdir(PLUGINS)).filter((n) => n.endsWith('.mjs'))) {
   const dyn = JSON.parse(await readFile(DYN, 'utf8'))
   for (const p of dyn.plugins || []) {
     const label = (p.name || p.idPrefix || '?').slice(0, 18)
-    for (const half of ['hostCode', 'clientCode']) {
-      const code = p[half]
-      if (typeof code !== 'string') continue
+    for (const half of ['host', 'client']) {
+      let code = p[half + 'Code']
+      if (typeof code !== 'string' || code.length === 0) {
+        const fileRef = p[half + 'File']
+        if (typeof fileRef === 'string' && fileRef.length > 0) {
+          try { code = await readFile(fileRef.startsWith('/') ? fileRef : join(HOME, fileRef), 'utf8') } catch { code = '' }
+        }
+      }
+      if (typeof code !== 'string' || code.length === 0) continue
       for (const m of code.matchAll(/(?:harness\.)?registerTool\(\s*['"]([\w-]+)['"]\s*,\s*['"]((?:[^'\\]|\\.)*)['"]/g)) {
         tools.push({ name: m[1], desc: m[2], plugin: label, where: '动态' })
       }
-      // 对象字面量形态：registerTool(ctx, { name: 'xxx', description: '...' }) / harness.registerTool(ctx, tool) 且 tool 带 name 字段
-      for (const m of code.matchAll(/(?:harness\.)?registerTool\(\s*ctx,\s*(?:tool|[\w$]+)\)/g)) {
+      // 薄桥直接形态：libDefineJsonTool(harness, ctx, 'name', 'desc', ...)（4b prelude 归一 helper）
+      for (const m of code.matchAll(/libDefineJsonTool\(\s*harness,\s*ctx,\s*['"]([\w-]+)['"]\s*,\s*['"]((?:[^'\\]|\\.)*)['"]/g)) {
+        tools.push({ name: m[1], desc: m[2], plugin: label, where: '动态' })
+      }
+      // 对象字面量形态：registerTool(ctx, { name: 'xxx', description: '...' }) / harness.registerTool(ctx, tool) 且 tool 带 name 字段 / 薄桥守卫 libRegisterGuarded(harness, ctx, tool)
+      for (const m of code.matchAll(/(?:(?:harness\.)?registerTool|libRegisterGuarded)\(\s*(?:harness,\s*)?ctx,\s*(?:tool|[\w$]+)\)/g)) {
         // 回溯找同段代码里的 name: 'xxx' 与 description: '...' 字段（取最近一对）
         const idx = m.index
         const window = code.slice(Math.max(0, idx - 6000), idx)
@@ -71,7 +83,7 @@ for (const t of all) (byDomain[domainOf(t.plugin, t.name)] ||= []).push(t)
 
 let md = `# 工具索引（机器生成，勿手改）\n\n`
 md += `> 生成器：\`~/.dsh/scripts/gen-tools-registry.mjs\`（单一事实源=代码内 registerTool 调用；改工具改代码，索引重新生成即可）\n`
-md += `> 生成时间：${new Date().toISOString().slice(0, 16).replace('T', ' ')} ｜ 总数：${all.length} ｜ 静态 ${all.filter((t) => t.where === '静态').length} + 动态 ${all.filter((t) => t.where === '动态').length}\n\n`
+md += `> 总数：${all.length} ｜ 静态 ${all.filter((t) => t.where === '静态').length} + 动态 ${all.filter((t) => t.where === '动态').length}（输出确定性：无时间戳，供 check diff 闸比对）\n\n`
 for (const [dom, list] of Object.entries(byDomain).sort()) {
   md += `## ${dom}（${list.length}）\n\n| 工具 | 插件 | 形态 | 描述（首句） |\n|---|---|---|---|\n`
   for (const t of list) md += `| \`${t.name}\` | ${t.plugin} | ${t.where} | ${t.desc.split(/[。；;.\n]/)[0].slice(0, 60)} |\n`
