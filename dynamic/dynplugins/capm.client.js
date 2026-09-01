@@ -1,4 +1,4 @@
-// capmgr 客户端半部 v1.0：能力管理三合一（壳原生）。
+// capmgr 客户端半部 v2.1：能力管理四 tab（壳原生）+ 市场独立徽章。2026-09-01 整体重构（用户拍板不分期）。
 // 插件 tab = plins MarketPanel 移植（plinst/* RPC 不变）；技能 tab = sklui SkillPanel 移植（skillui/* RPC 不变）；
 // MCP tab = v1 只读清单（capmgr/mcp.list）。chrome/徽章/i18n 上交壳；各自 modal 壳弃用。
 return {
@@ -8,12 +8,20 @@ return {
     const h = React.createElement
     const { useZh, isZhNow } = shell.helpers
 
-    // 徽章图标：图标套件定稿电插销 glyph（能力=插入取电）
-    function PlugGlyph() {
-      return h('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', style: { flex: 'none' } },
-        h('path', { d: 'M9 3 v4.5 M15 3 v4.5' }),
-        h('path', { d: 'M7 7.5 h10 v4.5 a5 5 0 0 1 -10 0 Z' }),
-        h('circle', { cx: 12, cy: 19.4, r: 1.7, fill: 'var(--dsw-alias-accent, #4f7cff)', stroke: 'none' }))
+    // 徽章图标（2026-09-01 用户拍板）：能力 = layers 叠层（正向直立，24×24 原生）；市场 = store 店面（直立）
+    // 蓝黑拼色规格（同 ArchiveIcon 拉手）：每图标恰 1 处 accent 蓝——layers 中层叠板 / store 门
+    function LayersGlyph() {
+      return h('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', style: { flex: 'none' } },
+        h('path', { d: 'M12 2.5 L21.5 8.5 L12 14.5 L2.5 8.5 Z' }),
+        h('path', { d: 'M2.5 12.7 L12 18.7 L21.5 12.7', stroke: 'var(--dsw-alias-accent, #4f7cff)' }),
+        h('path', { d: 'M2.5 16.6 L12 22.6 L21.5 16.6' }))
+    }
+    function StoreGlyph() {
+      return h('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', style: { flex: 'none' } },
+        h('path', { d: 'M3 9.5 L4.3 4.5 h15.4 L21 9.5' }),
+        h('path', { d: 'M3 9.5 a2.6 2.6 0 0 0 5.2 0 a2.6 2.6 0 0 0 5.2 0 a2.6 2.6 0 0 0 5.2 0' }),
+        h('path', { d: 'M4.5 12.1 V20.5 h15 V12.1' }),
+        h('path', { d: 'M9.5 20.5 v-5.4 h5 v5.4', stroke: 'var(--dsw-alias-accent, #4f7cff)' }))
     }
 
 
@@ -44,6 +52,8 @@ return {
         noMatch: '没有匹配的仓库。',
         badgeTitle: '插件市场（浏览并安装社区插件）',
         badge: '市场',
+        previewTitle: '安装前确认来源', previewFetching: '拉取仓库信息…', confirmInstall: '确认安装', previewCancel: '取消',
+        previewName: '名称', previewOwner: '作者', previewDesc: '描述', previewLicense: '许可证', previewStars: '星标', previewHome: '主页',
       } : {
         browseFailed: 'Browse failed',
         installFailed: 'Install failed',
@@ -69,6 +79,8 @@ return {
         noMatch: 'No matching repositories.',
         badgeTitle: 'Plugin market (browse and install community plugins)',
         badge: 'Market',
+        previewTitle: 'Confirm source before install', previewFetching: 'Fetching repo info…', confirmInstall: 'Confirm install', previewCancel: 'Cancel',
+        previewName: 'Name', previewOwner: 'Owner', previewDesc: 'Description', previewLicense: 'License', previewStars: 'Stars', previewHome: 'Homepage',
       }
     }
 
@@ -168,6 +180,7 @@ return {
         footerCount: (n) => n + ' 个技能 · 保存在宿主持久层',
         badgeTitle: '管理技能（添加 / 启用 / 禁用 / 删除）',
         badge: '技能',
+        viewFull: '查看全文',
       } : {
         loadFailed: 'Failed to load the skill list',
         opFailed: 'Operation failed',
@@ -211,6 +224,7 @@ return {
         footerCount: (n) => n + ' skills · persisted in the host store',
         badgeTitle: 'Manage skills (add / enable / disable / delete)',
         badge: 'Skills',
+        viewFull: 'View full text',
       }
     }
 
@@ -372,7 +386,7 @@ return {
 
     function capv2Copy(zh) {
       return zh ? {
-        capsTitle: '运行能力', dynbootGroup: '自动加载插件（dynboot）', injectorGroup: '注入器包（injector）',
+        capsTitle: '运行能力', dynbootGroup: '自动加载插件（dynboot）', injectorGroup: '注入器包', notRunning: '未运行',
         running: '运行中', hotStopped: '已热停（重启后恢复）', disabled: '已禁用',
         enable: '启用', disable: '禁用', hotStop: '热停',
         restartHint: '已写入配置，重启 DSH 后生效', enableRestart: '启用将在重启后生效',
@@ -385,8 +399,9 @@ return {
         providersTitle: 'Provider 列表', login: '登录', relogin: '重新登录', loggedIn: '有订阅登录 flow', noFlow: '无订阅登录',
         authWaiting: '等待授权…', authOpenHint: '在浏览器打开链接并输入验证码完成授权：', authDone: '登录完成', authCancelled: '已取消', authFailed: '登录失败',
         cancel: '取消', refresh: '刷新', modelsUnit: '个模型', chooseProvider: '选择 provider', chooseModel: '选择模型',
+        webSearchTitle: '网页搜索', wsUse: '切换到此源', wsCurrent: '当前源', wsUnset: '未指定（多 provider 并存时会歧义），请选择一个',
       } : {
-        capsTitle: 'Runtime capabilities', dynbootGroup: 'Auto-loaded plugins (dynboot)', injectorGroup: 'Injector packages',
+        capsTitle: 'Runtime capabilities', dynbootGroup: 'Auto-loaded plugins (dynboot)', injectorGroup: 'Injector packages', notRunning: 'not running',
         running: 'running', hotStopped: 'hot-stopped (returns after restart)', disabled: 'disabled',
         enable: 'Enable', disable: 'Disable', hotStop: 'Hot stop',
         restartHint: 'Written; takes effect after a DSH restart', enableRestart: 'Enabling requires a restart',
@@ -399,6 +414,7 @@ return {
         providersTitle: 'Providers', login: 'Sign in', relogin: 'Sign in again', loggedIn: 'subscription flow available', noFlow: 'no subscription flow',
         authWaiting: 'Waiting for authorization…', authOpenHint: 'Open the link in a browser and enter the code:', authDone: 'Signed in', authCancelled: 'Cancelled', authFailed: 'Sign-in failed',
         cancel: 'Cancel', refresh: 'Refresh', modelsUnit: 'models', chooseProvider: 'Choose a provider', chooseModel: 'Choose a model',
+        webSearchTitle: 'Web search', wsUse: 'Switch to this source', wsCurrent: 'Current source', wsUnset: 'No source chosen (ambiguous when multiple providers exist) — pick one',
       }
     }
 
@@ -430,13 +446,13 @@ return {
       }
       const rows = (list, kind) => (Array.isArray(list) ? list : []).map((r) => {
         const key = kind + ':' + r.id
-        const stateText = r.disabled === true ? t.disabled : (r.running === true ? t.running : (kind === 'dynboot' ? t.hotStopped : t.disabled))
+        const stateText = r.disabled === true ? t.disabled : (r.running === true ? t.running : (kind === 'dynboot' ? t.hotStopped : t.notRunning))
         return React.createElement('div', { key, className: 'capv2-row' },
           React.createElement('span', { className: 'plsm-dot ' + (r.disabled === true ? 'plsm-dot-rejected' : (r.running === true ? 'plsm-dot-active' : 'plsm-dot-rejected')) }),
           React.createElement('span', { className: 'capv2-name', title: r.purpose || r.dir || '' }, r.name || r.id),
           React.createElement('span', { className: 'capv2-state' }, stateText),
           kind === 'dynboot' && r.running === true && r.disabled !== true && data !== null && data.hotStopAvailable === true
-            ? React.createElement('button', { type: 'button', className: 'capv2-btn', disabled: busy === key, onClick: () => act('capmgr/caps.hotStop', { id: r.id }, key) }, t.hotStop) : null,
+            ? React.createElement('button', { type: 'button', className: 'capv2-btn capv2-primary', disabled: busy === key, onClick: () => act('capmgr/caps.hotStop', { id: r.id }, key) }, t.hotStop) : null,
           r.disabled === true
             ? React.createElement('button', { type: 'button', className: 'capv2-btn', title: t.enableRestart, disabled: busy === key, onClick: () => act('capmgr/caps.setDisabled', { kind, id: r.id, disabled: false }, key) }, t.enable)
             : React.createElement('button', { type: 'button', className: 'capv2-btn', title: t.restartHint, disabled: busy === key, onClick: () => act('capmgr/caps.setDisabled', { kind, id: r.id, disabled: true }, key) }, t.disable))
@@ -454,9 +470,7 @@ return {
             React.createElement('span', { className: 'capv2-name' }, t.plasmidCfg),
             React.createElement('button', { type: 'button', className: 'capv2-btn', onClick: () => setDrawerOpen(!drawerOpen) }, t.configBtn + (drawerOpen ? ' ▸' : ' ▸'))),
           drawerOpen === true ? React.createElement(PlasmidDrawer, { zh, t }) : null,
-          React.createElement('div', { className: 'capv2-featsw' },
-            React.createElement('div', { className: 'capv2-group' }, t.featswTitle),
-            React.createElement('div', { className: 'capv2-dim' }, t.featswBody))))
+          React.createElement('div', { className: 'capv2-dim', style: { paddingTop: 10 } }, t.featswTitle + ' · ' + (zh ? '未落地（backlog §7）' : 'not landed (backlog §7)'))))
     }
 
     function PlasmidDrawer(props) {
@@ -520,13 +534,29 @@ return {
       const [selModel, setSelModel] = React.useState('')
       const [authKey, setAuthKey] = React.useState('')
       const [authState, setAuthState] = React.useState(null)
+      const [pickerOpen, setPickerOpen] = React.useState(false)
+      const [wsData, setWsData] = React.useState(null)
+      const [wsBusy, setWsBusy] = React.useState(false)
       const load = () => {
         host.call('capmgr/model.state').then((r) => {
           if (r !== null && typeof r === 'object' && r.ok === true) setData(r)
           else setErr(r !== null && typeof r === 'object' && typeof r.error === 'string' ? r.error : t.loadFailed)
         }).catch((f) => setErr(String(f && f.message ? f.message : f)))
       }
-      React.useEffect(() => { load() }, [])
+      const loadWs = () => {
+        host.call('capmgr/webSearch.get').then((r) => {
+          if (r !== null && typeof r === 'object' && r.ok === true) setWsData(r)
+        }).catch(() => {})
+      }
+      const setWs = (pid) => {
+        setWsBusy(true); setErr(null); setNote(null)
+        host.call('capmgr/webSearch.set', { provider: pid }).then((r) => {
+          setWsBusy(false)
+          if (r !== null && typeof r === 'object' && r.ok === true) { setNote(typeof r.note === 'string' ? r.note : ''); loadWs() }
+          else setErr(r !== null && typeof r === 'object' && typeof r.error === 'string' ? r.error : t.saveFailed)
+        }).catch((f) => { setWsBusy(false); setErr(String(f && f.message ? f.message : f)) })
+      }
+      React.useEffect(() => { load(); loadWs() }, [])
       // 登录轮询：timer 服务可用时 1.5s 一跳，直到 done
       React.useEffect(() => {
         if (authKey === '') return
@@ -553,10 +583,10 @@ return {
           if (r !== null && typeof r === 'object' && r.ok === true) setCatalog(r.models)
         }).catch(() => {})
       }
-      const saveDefault = () => {
+      const saveDefaultAs = (pid, mid) => {
         setErr(null); setNote(null)
-        host.call('capmgr/model.setDefault', { provider: selProvider, model: selModel }).then((r) => {
-          if (r !== null && typeof r === 'object' && r.ok === true) { setNote(t.defaultSaved); load() }
+        host.call('capmgr/model.setDefault', { provider: pid, model: mid }).then((r) => {
+          if (r !== null && typeof r === 'object' && r.ok === true) { setNote(t.defaultSaved); setPickerOpen(false); load() }
           else setErr(r !== null && typeof r === 'object' && typeof r.error === 'string' ? r.error : t.saveFailed)
         }).catch((f) => setErr(String(f && f.message ? f.message : f)))
       }
@@ -574,25 +604,35 @@ return {
       const def = data.def !== null && typeof data.def === 'object' ? data.def : null
       return React.createElement('div', { className: 'capmgr-mcp' },
         React.createElement('div', { className: 'plinst-section' }, t.defModel),
-        React.createElement('div', { className: 'capv2-row' },
+        React.createElement('button', { type: 'button', className: 'capv2-modelsel', onClick: () => setPickerOpen(pickerOpen !== true) },
           React.createElement('span', { className: 'capv2-name' }, def !== null ? def.provider + ' / ' + def.model : '—'),
-          React.createElement('select', { className: 'capv2-sel', value: selProvider, onChange: (e) => pickProvider(e.target.value) },
-            React.createElement('option', { value: '' }, t.chooseProvider),
-            providers.map((p) => React.createElement('option', { key: p.id, value: p.id }, p.name + ' (' + p.id + ')'))),
-          selProvider !== '' && Array.isArray(catalog) ? React.createElement('select', { className: 'capv2-sel', value: selModel, onChange: (e) => setSelModel(e.target.value) },
-            React.createElement('option', { value: '' }, t.chooseModel),
-            catalog.map((m) => React.createElement('option', { key: m.id, value: m.id }, m.name + ' (' + m.id + ')'))) : null,
-          selProvider !== '' && selModel !== '' ? React.createElement('button', { type: 'button', className: 'capv2-btn capv2-primary', onClick: saveDefault }, t.setDefault) : null),
+          React.createElement('span', { className: 'capv2-dim' }, pickerOpen === true ? '\u25b4' : '\u25be')),
+        pickerOpen === true ? React.createElement('div', { className: 'capv2-picker' },
+          providers.map((p) => React.createElement('div', { key: 'pk:' + p.id },
+            React.createElement('div', { className: 'capv2-row capv2-pickrow', onClick: () => pickProvider(p.id) },
+              React.createElement('span', { className: 'capv2-name' }, p.name + ' (' + p.id + ')'),
+              React.createElement('span', { className: 'capv2-dim' }, String(p.modelsCount) + ' ' + t.modelsUnit)),
+            selProvider === p.id && Array.isArray(catalog) ? React.createElement('div', { className: 'capv2-picker-models' },
+              catalog.map((m) => React.createElement('div', { key: 'mk:' + m.id, className: 'capv2-row capv2-pickrow capv2-modelrow', onClick: () => saveDefaultAs(p.id, m.id) },
+                React.createElement('span', null, m.name + ' (' + m.id + ')')))) : null))) : null,
         err !== null ? React.createElement('div', { className: 'plinst-error' }, err) : null,
         note !== null ? React.createElement('div', { className: 'plinst-note' }, note) : null,
         React.createElement('div', { className: 'plinst-section' }, t.providersTitle),
-        providers.map((p) => React.createElement('div', { key: p.id, className: 'capv2-row capv2-provider' },
+        providers.map((p) => React.createElement('div', { key: p.id, className: 'capv2-row capv2-provider', title: (p.baseURL !== '' ? p.baseURL : '') + (p.apiKeyEnv !== '' ? (p.baseURL !== '' ? ' · ' : '') + 'env: ' + p.apiKeyEnv : ''), style: p.modelsCount === 0 ? { opacity: 0.55 } : undefined },
+          React.createElement('span', { className: 'plsm-dot ' + (def !== null && def.provider === p.id ? 'plsm-dot-active' : 'plsm-dot-rejected') }),
           React.createElement('span', { className: 'capv2-name' }, p.name + ' (' + p.id + ')'),
-          React.createElement('span', { className: 'capv2-dim' }, p.baseURL !== '' ? p.baseURL : (p.apiKeyEnv !== '' ? 'env: ' + p.apiKeyEnv : '')),
           React.createElement('span', { className: 'capv2-dim' }, String(p.modelsCount) + ' ' + t.modelsUnit),
           p.authKey !== ''
             ? React.createElement('button', { type: 'button', className: 'capv2-btn', disabled: p.inFlight === true, onClick: () => beginAuth(p.authKey) }, t.login)
             : React.createElement('span', { className: 'capv2-dim' }, t.noFlow))),
+        React.createElement('div', { className: 'plinst-section' }, t.webSearchTitle),
+        wsData === null ? null : React.createElement('div', { className: 'capv2-picker' },
+          wsData.current === '' ? React.createElement('div', { className: 'capv2-dim', style: { padding: '4px 10px' } }, t.wsUnset) : null,
+          (Array.isArray(wsData.providers) ? wsData.providers : []).map((wp) => React.createElement('div', { key: 'ws:' + wp.id, className: 'capv2-row' },
+            React.createElement('span', { className: 'plsm-dot ' + (wsData.current === wp.id ? 'plsm-dot-active' : 'plsm-dot-rejected') }),
+            React.createElement('span', { className: 'capv2-name' }, String(wp.name ?? wp.id)),
+            wsData.current === wp.id ? React.createElement('span', { className: 'capv2-dim' }, t.wsCurrent) : null,
+            wsData.current !== wp.id ? React.createElement('button', { type: 'button', className: 'capv2-btn', disabled: wsBusy === true, onClick: () => setWs(wp.id) }, t.wsUse) : null))),
         authKey !== '' || authState !== null ? React.createElement('div', { className: 'capv2-authpanel' },
           authState !== null && authState.phase === 'url'
             ? React.createElement(React.Fragment, null,
@@ -604,7 +644,7 @@ return {
           React.createElement('button', { type: 'button', className: 'capv2-btn', onClick: () => { host.call('capmgr/auth.cancel', { key: authKey }).catch(() => {}); setAuthKey(''); setAuthState(null) } }, t.cancel)) : null)
     }
 
-    function PluginsTab() {
+    function MarketPanel() {
       const zh = useZh()
       const t = marketCopy(zh)
       const [repos, setRepos] = React.useState(null)
@@ -615,6 +655,8 @@ return {
       const [uninstalling, setUninstalling] = React.useState('')
       const [error, setError] = React.useState(null)
       const [note, setNote] = React.useState(null)
+      const [preview, setPreview] = React.useState(null)
+      const [previewing, setPreviewing] = React.useState('')
 
       const browse = (q) => {
         host.call('plinst/browse', { query: q }).then((answered) => {
@@ -636,6 +678,7 @@ return {
       }
       const install = (repo) => {
         setInstalling(repo)
+        setPreview(null)
         setError(null)
         setNote(null)
         host.call('plinst/install', { repo }).then((answered) => {
@@ -648,6 +691,20 @@ return {
           }
         }).catch((failure) => {
           setInstalling('')
+          setError(String(failure && failure.message ? failure.message : failure))
+        })
+      }
+      // P1-4 供应链：安装前先拉 preview 来源卡（不 clone 不落地），用户确认才 install
+      const startInstall = (repo) => {
+        setPreviewing(repo)
+        setError(null)
+        setNote(null)
+        host.call('plinst/preview', { repo }).then((answered) => {
+          setPreviewing('')
+          if (answered !== null && typeof answered === 'object' && answered.ok === true) setPreview({ repo, info: answered })
+          else setError(answered !== null && typeof answered === 'object' && typeof answered.error === 'string' ? answered.error : t.browseFailed)
+        }).catch((failure) => {
+          setPreviewing('')
           setError(String(failure && failure.message ? failure.message : failure))
         })
       }
@@ -729,8 +786,8 @@ return {
                       type: 'button',
                       className: 'plinst-btn plinst-btn-primary',
                       disabled: installing !== '',
-                      onClick: () => install(r.repo),
-                    }, installing === r.repo ? t.installing : t.install))))
+                      onClick: () => startInstall(r.repo),
+                    }, installing === r.repo ? t.installing : (previewing === r.repo ? t.previewFetching : t.install)))))
       }).filter((node) => node !== null)
 
       const installedRows = installed === null || !Array.isArray(installed.registry) || installed.registry.length === 0 ? null : installed.registry.map((r) => {
@@ -748,8 +805,32 @@ return {
           }, uninstalling === String(r.dir) ? t.uninstalling : t.uninstall))
       }).filter((node) => node !== null)
 
+      // P1-4 来源确认卡（plinst/preview 数据，确认才安装）
+      const previewNode = preview === null ? null : React.createElement('div', { className: 'skillui-modal' },
+        React.createElement('div', { className: 'skillui-modal-backdrop', onClick: () => setPreview(null) }),
+        React.createElement('div', { className: 'skillui-modal-panel', role: 'dialog', 'aria-modal': 'true' },
+          React.createElement('div', { className: 'skillui-modal-title' }, t.previewTitle),
+          React.createElement('div', { className: 'plinst-repo', style: { fontSize: 14 } }, preview.repo),
+          (() => {
+            const info = preview.info
+            const rows = [
+              [t.previewName, info.name], [t.previewOwner, info.owner],
+              typeof info.description === 'string' && info.description !== '' ? [t.previewDesc, info.description] : null,
+              typeof info.license === 'string' && info.license !== '' ? [t.previewLicense, info.license] : null,
+              typeof info.stars === 'number' ? [t.previewStars, String(info.stars)] : null,
+              typeof info.homepage === 'string' && info.homepage !== '' ? [t.previewHome, info.homepage] : null,
+            ].filter((r) => r !== null)
+            return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5 } },
+              rows.map((r, i) => React.createElement('div', { key: i, style: { display: 'flex', gap: 8 } },
+                React.createElement('span', { className: 'capv2-dim', style: { flex: 'none', width: 64 } }, r[0]),
+                React.createElement('span', { style: { minWidth: 0, wordBreak: 'break-all' } }, String(r[1] ?? '')))),
+              typeof info.risk === 'string' && info.risk !== '' ? React.createElement('div', { className: 'plinst-warn', style: { margin: '8px 0 0' } }, info.risk) : null)
+          })(),
+          React.createElement('div', { className: 'skillui-modal-foot' },
+            React.createElement('button', { type: 'button', className: 'skillui-btn', onClick: () => setPreview(null) }, t.previewCancel),
+            React.createElement('button', { type: 'button', className: 'skillui-btn skillui-btn-primary', disabled: installing !== '', onClick: () => install(preview.repo) }, t.confirmInstall))))
+
       return React.createElement('div', { className: 'plinst-tab' },
-          React.createElement(CapsSection, null),
           React.createElement('div', { className: 'plinst-warn' }, t.warning),
           error !== null ? React.createElement('div', { className: 'plinst-error' }, error) : null,
           note !== null ? React.createElement('div', { className: 'plinst-note' }, note) : null,
@@ -768,7 +849,13 @@ return {
               React.createElement('div', { className: 'plinst-section' }, t.installed, React.createElement('span', { className: 'plinst-section-count' }, t.installedCount(installed.registry.length))),
               installedRows) : null,
             repos === null ? React.createElement('div', { className: 'plinst-empty' }, t.loading)
-              : (repoRows.length === 0 ? React.createElement('div', { className: 'plinst-empty' }, t.noMatch) : cards)))
+              : (repoRows.length === 0 ? React.createElement('div', { className: 'plinst-empty' }, t.noMatch) : cards)),
+          previewNode)
+    }
+
+    // 插件管理 tab = 运行能力区（市场已独立为侧栏徽章）
+    function PluginsTab() {
+      return React.createElement(CapsSection, null)
     }
 
     function SkillsTab() {
@@ -779,6 +866,7 @@ return {
       const [error, setError] = React.useState(null)
       const [showForm, setShowForm] = React.useState(false)
       const [expanded, setExpanded] = React.useState(null)
+      const [fullText, setFullText] = React.useState(null)
       const [form, setForm] = React.useState({ name: '', description: '', whenToUse: '', content: '', modelInvocable: true, userInvocable: true, alwaysInject: false })
 
       const refresh = () => {
@@ -830,7 +918,7 @@ return {
           React.createElement('div', { className: 'skillui-tags' },
             s.modelInvocable === true ? React.createElement('span', { className: 'skillui-tag' }, t.modelInvokable) : null,
             s.userInvocable === true ? React.createElement('span', { className: 'skillui-tag' }, t.userInvokable) : null,
-            typeof s.whenToUse === 'string' && s.whenToUse.length > 0 ? React.createElement('span', { className: 'skillui-tag', title: s.whenToUse }, 'whenToUse') : null,
+            typeof s.whenToUse === 'string' && s.whenToUse.length > 0 ? React.createElement('span', { className: 'skillui-tag', title: s.whenToUse }, s.whenToUse.length > 24 ? s.whenToUse.slice(0, 24) + '…' : s.whenToUse) : null,
             React.createElement('button', {
               type: 'button',
               className: 'skillui-tag skillui-tag-btn' + (s.alwaysInject === true ? ' skillui-tag-inject' : ''),
@@ -838,7 +926,9 @@ return {
               title: s.alwaysInject === true ? t.injectOnTitle : t.injectOffTitle,
               onClick: () => act('skillui/setInject', { name: s.name, alwaysInject: s.alwaysInject !== true }),
             }, s.alwaysInject === true ? t.injectOn : t.injectOff)),
-          isOpen === true ? React.createElement('div', { className: 'skillui-content' }, mdToNodes(typeof s.content === 'string' ? s.content : '')) : null)
+          isOpen === true ? React.createElement('div', { className: 'skillui-content' },
+            typeof s.whenToUse === 'string' && s.whenToUse.length > 0 ? React.createElement('div', { className: 'skillui-md-quote', style: { marginTop: 0 } }, s.whenToUse) : null,
+            React.createElement('button', { type: 'button', className: 'skillui-btn', onClick: (e) => { e.stopPropagation(); setFullText(s.name) } }, t.viewFull)) : null)
       }).filter((node) => node !== null)
 
       const othersRows = others.map((s) => {
@@ -886,6 +976,15 @@ return {
             React.createElement('button', { type: 'button', className: 'skillui-btn', onClick: () => setShowForm(false) }, t.cancel),
             React.createElement('button', { type: 'button', className: 'skillui-btn skillui-btn-primary', disabled: busy === true || formValid === false, onClick: () => act('skillui/add', { name: form.name.trim(), description: form.description.trim(), whenToUse: form.whenToUse.trim(), content: form.content, modelInvocable: form.modelInvocable, userInvocable: form.userInvocable, alwaysInject: form.alwaysInject }) }, t.addTitle))))
 
+      const fullSkill = fullText !== null ? skills.find((x) => x !== null && typeof x === 'object' && x.name === fullText) : undefined
+      const fullNode = fullSkill === undefined ? null : React.createElement('div', { className: 'skillui-modal' },
+        React.createElement('div', { className: 'skillui-modal-backdrop', onClick: () => setFullText(null) }),
+        React.createElement('div', { className: 'skillui-modal-panel', role: 'dialog', 'aria-modal': 'true' },
+          React.createElement('div', { className: 'skillui-modal-title' }, fullSkill.name),
+          React.createElement('div', null, mdToNodes(typeof fullSkill.content === 'string' ? fullSkill.content : '')),
+          React.createElement('div', { className: 'skillui-modal-foot' },
+            React.createElement('button', { type: 'button', className: 'skillui-btn', onClick: () => setFullText(null) }, t.close))))
+
       return React.createElement('div', { className: 'skillui-tab' },
           error !== null ? React.createElement('div', { className: 'skillui-error' }, error) : null,
           React.createElement('div', { className: 'skillui-body' },
@@ -899,7 +998,8 @@ return {
           React.createElement('div', { className: 'skillui-footer' },
             React.createElement('span', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary, #6b7280)' } }, t.footerCount(skills.length)),
             React.createElement('button', { type: 'button', className: 'skillui-btn skillui-btn-primary', onClick: () => { setShowForm(true); setError(null) } }, t.addTitle)),
-          formNode)
+          formNode,
+          fullNode)
     }
 
     // ── MCP tab（v1 只读） ──
@@ -923,13 +1023,12 @@ return {
         data === null ? h('div', { className: 'plinst-empty' }, zh ? '加载中…' : 'Loading…')
           : servers.length === 0
             ? h('div', { className: 'plinst-empty' }, zh ? '没有挂载的 MCP server' : 'No MCP servers mounted')
-            : servers.map((s) => h('div', { key: s.id, className: 'capmgr-mcp-row' },
+            : servers.map((s) => h('div', { key: s.id, className: 'capmgr-mcp-row', title: typeof s.command === 'string' ? s.command : '' },
                 h('span', { className: 'plsm-dot ' + (s.disabled === true ? 'plsm-dot-rejected' : 'plsm-dot-active') }),
                 h('span', { className: 'capmgr-mcp-name' }, s.serverName || s.id),
                 h('span', { className: 'capmgr-mcp-meta' }, s.transport),
-                h('span', { className: 'capmgr-mcp-cmd', title: s.command }, s.command),
                 h('span', { className: 'capmgr-mcp-state' }, s.disabled === true ? (zh ? '已禁用' : 'disabled') : (zh ? '运行中' : 'running')))),
-        h('div', { className: 'capmgr-mcp-foot' }, zh ? 'v1 为只读清单；浏览源/一键安装/表单配置（loader.create 热挂，实证可行）在后续版本。' : 'v1 is read-only; browse/install/form-config (hot loader.create, proven) lands in a later version.'))
+        h('div', { className: 'capmgr-mcp-foot' }, zh ? 'v1 只读清单；安装与表单配置在后续版本（命令详情悬停行查看）。' : 'v1 is read-only; install and form config land in a later version (hover a row for its command).'))
     }
 
     // ── tab 容器 ──
@@ -986,20 +1085,36 @@ return {
 .capv2-authpanel { border: 1px solid rgba(128,128,128,.25); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .capv2-authurl { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-all; color: var(--dsw-alias-accent, #4f7cff); }
 .capv2-authcode { font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+.capv2-row .capv2-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.capv2-modelsel { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; box-sizing: border-box; border: 1px solid rgba(128,128,128,.3); background: var(--dsw-alias-bg-layer-1, transparent); border-radius: 9px; padding: 8px 12px; font-size: 12.5px; font-family: inherit; color: inherit; cursor: pointer; }
+.capv2-modelsel:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.1)); }
+.capv2-picker { border: 1px solid rgba(128,128,128,.18); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.capv2-pickrow { cursor: pointer; }
+.capv2-picker-models { margin-left: 14px; border-left: 2px solid rgba(128,128,128,.15); padding-left: 6px; display: flex; flex-direction: column; gap: 1px; }
+.capv2-modelrow { font-size: 12px; }
 `)
 
     // ── 注册进壳 ──
     let handle = undefined
+    let handle2 = undefined
     ctx.effect(() => {
       handle = shell.registerFeature({
         id: 'capmgr',
         order: 40,
-        badge: { icon: PlugGlyph, label: () => (isZhNow() ? '能力' : 'Capabilities') },
+        badge: { icon: LayersGlyph, label: () => (isZhNow() ? '能力' : 'Capabilities') },
         title: () => (isZhNow() ? '能力管理' : 'Capability Manager'),
         panel: CapmgrPanel,
-        foot: () => (isZhNow() ? '插件市场源：GitHub topic dsh-plugin · MCP 安装/配置在后续版本' : 'Plugin source: GitHub topic dsh-plugin · MCP install/config in a later version'),
+        foot: () => '',
       })
-      return () => { const hd = handle; handle = undefined; if (hd !== undefined) hd.dispose() }
+      handle2 = shell.registerFeature({
+        id: 'market',
+        order: 45,
+        badge: { icon: StoreGlyph, label: () => (isZhNow() ? '市场' : 'Market') },
+        title: () => (isZhNow() ? '插件市场' : 'Plugin Market'),
+        panel: MarketPanel,
+        foot: () => (isZhNow() ? '仓库来源：GitHub topic dsh-plugin · 只安装你审查过来源的仓库' : 'Source: GitHub topic dsh-plugin · install only repositories you have reviewed'),
+      })
+      return () => { for (const hd of [handle, handle2]) { if (hd !== undefined) hd.dispose() } handle = undefined; handle2 = undefined }
     })
   },
 }

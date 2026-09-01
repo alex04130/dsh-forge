@@ -3,17 +3,9 @@
 // 技能域 = sklui 原样移植（skill_* 六个模型工具 + skillui/* RPC）；
 // MCP 域 = 新写 v1 只读清单（capmgr/mcp.list 读 loader.entries）。
 // RPC 前缀全部保留，client 侧零改名；helper 去重一份（errText/jsonText）。
-function errText(error) {
-  if (error !== null && typeof error === 'object' && typeof error.message === 'string') return error.message
-  return String(error)
-}
-function jsonText(value) {
-  return JSON.stringify(value, null, 2)
-}
-function textOf(collected) {
-  if (collected !== null && typeof collected === 'object' && typeof collected.text === 'string') return collected.text
-  return ''
-}
+const errText = libErrText
+const jsonText = libJsonText
+const textOf = libTextOf
 // plinst host half: community plugin market + installer.
 // Downloads GitHub repos (topic dsh-plugin), classifies their shape
 // (npm package / dynamic manifest / preset / bundle), and installs them into
@@ -42,7 +34,7 @@ function slug(name) {
 
 
 return {
-  inject: ['skills', 'skillRegistry', 'settings', 'agentDefaultModel', 'llm'],
+  inject: ['skills', 'skillRegistry', 'settings', 'agentDefaultModel', 'llm', 'tools'],
   apply(ctx) {
     // ── 插件域（plins 移植） ──
     function plinsHalf(ctx) {
@@ -176,7 +168,7 @@ return {
               const mk = await sh(q('require("fs").mkdirSync(' + JSON.stringify(target.slice(0, target.lastIndexOf('/'))) + ',{recursive:true})'), 8000)
               const link = await sh(q('(()=>{const fs=require("fs");fs.rmSync(' + JSON.stringify(target) + ',{force:true});fs.symlinkSync(' + JSON.stringify(dir) + ',' + JSON.stringify(target) + ',process.platform==="win32"?"junction":"dir")})()'), 8000)
               if (link.exitCode !== 0) return { ok: false, error: 'symlink 失败：' + link.text.trim() }
-              const regOut = await sh(q('(()=>{const fs=require("fs");const p=' + JSON.stringify(REGISTRY) + ';let d={version:1,plugins:[]};try{d=JSON.parse(fs.readFileSync(p,"utf8"))}catch(e){};d.plugins=(d.plugins||[]).filter(x=>x.name!==' + JSON.stringify(name) + ');d.plugins.push({name:' + JSON.stringify(name) + ',dir:' + JSON.stringify(dir) + '});fs.mkdirSync(require("path").dirname(p),{recursive:true});fs.writeFileSync(p,JSON.stringify(d,null,2))})()'), 8000)
+              const regOut = await sh(q('(()=>{const fs=require("fs");const p=' + JSON.stringify(REGISTRY) + ';let d={version:1,plugins:[]};try{d=JSON.parse(fs.readFileSync(p,"utf8"))}catch(e){};d.plugins=(d.plugins||[]).filter(x=>x.name!==' + JSON.stringify(name) + ');d.plugins.push({name:' + JSON.stringify(name) + ',dir:' + JSON.stringify(dir) + '});fs.mkdirSync(require("path").dirname(p),{recursive:true});const tmp=p+".tmp";fs.writeFileSync(tmp,JSON.stringify(d,null,2));fs.renameSync(tmp,p)})()'), 8000)
               if (regOut.exitCode !== 0) return { ok: false, error: '写入注入注册表失败' }
               let live = 'restart'
               if (loader !== undefined && typeof loader.create === 'function') {
@@ -203,10 +195,10 @@ return {
           const added = []
           for (const entry of entries) {
             if (entry === null || typeof entry !== 'object' || typeof entry.idPrefix !== 'string') continue
-            const merge = await sh(q('(()=>{const fs=require("fs");const p=' + JSON.stringify(AUTOPLUGINS) + ';let d={version:1,plugins:[]};try{d=JSON.parse(fs.readFileSync(p,"utf8"))}catch(e){};const e=' + JSON.stringify(JSON.stringify(entry)) + ';d.plugins=(d.plugins||[]).filter(x=>x.idPrefix!==e.idPrefix);d.plugins.push(e);fs.writeFileSync(p,JSON.stringify(d,null,2))})()'), 8000)
+            const merge = await sh(q('(()=>{const fs=require("fs");const p=' + JSON.stringify(AUTOPLUGINS) + ';let d={version:1,plugins:[]};try{d=JSON.parse(fs.readFileSync(p,"utf8"))}catch(e){};const e=' + JSON.stringify(JSON.stringify(entry)) + ';d.plugins=(d.plugins||[]).filter(x=>x.idPrefix!==e.idPrefix);if(e.disabled!==true)e.disabled=true;d.plugins.push(e);const tmp=p+".tmp";fs.writeFileSync(tmp,JSON.stringify(d,null,2));fs.renameSync(tmp,p)})()'), 8000)
             if (merge.exitCode === 0) added.push(entry.idPrefix)
           }
-          return { ok: true, repo, kind: 'dynamic', added, dir, note: added.length > 0 ? '已合并进 auto-plugins.json；重启 DSH 后由 dynboot 恢复运行' : '清单中没有可用条目（缺少 idPrefix）' }
+          return { ok: true, repo, kind: 'dynamic', added, dir, note: added.length > 0 ? '已合并进 auto-plugins.json（默认 disabled，防第三方代码直接跑）；重启 DSH 后在能力管理里启用' : '清单中没有可用条目（缺少 idPrefix）' }
         }
 
         // 3) preset shape
@@ -242,7 +234,7 @@ return {
         const target = NODE_MODULES + '/' + name
         const linkOut = await sh(q('require("fs").rmSync(' + JSON.stringify(target) + ',{force:true})'), 8000)
         if (linkOut.exitCode !== 0) return { ok: false, error: '删除符号链接失败' }
-        const regOut = await sh(q('(()=>{const fs=require("fs");const p=' + JSON.stringify(REGISTRY) + ';let d={version:1,plugins:[]};try{d=JSON.parse(fs.readFileSync(p,"utf8"))}catch(e){};d.plugins=(d.plugins||[]).filter(x=>x.name!==' + JSON.stringify(name) + ');fs.writeFileSync(p,JSON.stringify(d,null,2))})()'), 8000)
+        const regOut = await sh(q('(()=>{const fs=require("fs");const p=' + JSON.stringify(REGISTRY) + ';let d={version:1,plugins:[]};try{d=JSON.parse(fs.readFileSync(p,"utf8"))}catch(e){};d.plugins=(d.plugins||[]).filter(x=>x.name!==' + JSON.stringify(name) + ');const tmp=p+".tmp";fs.writeFileSync(tmp,JSON.stringify(d,null,2));fs.renameSync(tmp,p)})()'), 8000)
         if (regOut.exitCode !== 0) return { ok: false, error: '更新注入注册表失败' }
         const dirOut = await sh(q('require("fs").rmSync(' + JSON.stringify(dir) + ',{recursive:true,force:true})'), 8000)
         return {
@@ -281,12 +273,31 @@ return {
             }
           },
         })
-        let dispose = undefined
-        try { dispose = harness.registerTool(ctx, stopTool) } catch (error) { /* 同名工具已被运行中实例注册（过渡期 plins/capmgr 双跑）：同义跳过 */ }
-        if (dispose !== undefined) ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
+        libRegisterGuarded(harness, ctx, stopTool)
       }
 
       harness.handle('plinst/browse', guard(browse))
+      harness.handle('plinst/preview', guard(async (args) => {
+        // P1-4：安装前预览——只查 GitHub repo 元数据（来源/许可证/star），不 clone 不落地；
+        // 客户端展示【来源信息卡】+ 确认/取消，确认才调 plinst/install。
+        const repo = repoArg(args.repo)
+        if (repo === '') return { ok: false, error: '仓库格式无效：请用 owner/repo 或 https://github.com/owner/repo' }
+        const env = await ensureEnv()
+        const CURL = env.platform === 'win32' ? 'curl.exe' : 'curl'
+        const data = await shJson(CURL + ' -s -H "Accept: application/vnd.github+json" "' + API + '/repos/' + repo + '"', 20000)
+        if (data === undefined) return { ok: false, error: 'GitHub 查询失败（网络或限流），请稍后重试' }
+        return {
+          ok: true,
+          repo,
+          name: typeof data.full_name === 'string' ? data.full_name : repo,
+          owner: data.owner?.login ?? '',
+          description: typeof data.description === 'string' ? data.description : '',
+          license: data.license?.name ?? '',
+          stars: data.stargazers_count ?? 0,
+          homepage: typeof data.html_url === 'string' ? data.html_url : '',
+          risk: '第三方代码将获得 DSH 进程权限（与官方插件同权）；请确认来源可信后再安装。',
+        }
+      }))
       harness.handle('plinst/installed', guard(installed))
       harness.handle('plinst/install', guard(install))
       harness.handle('plinst/uninstall', guard(uninstall))
@@ -312,26 +323,7 @@ return {
       }
 
       function registerTool(name, description, parameters, execute, timeoutMs) {
-        const tool = harness.defineTool({
-          name,
-          description,
-          parameters,
-          output: {
-            schema: { type: 'string' },
-            render(_args, value) { return [{ type: 'text', text: typeof value === 'string' ? value : String(value) }] },
-          },
-          ...(timeoutMs === undefined ? {} : { timeoutMs }),
-          async execute(args, exec) {
-            try {
-              return await execute(args, exec)
-            } catch (error) {
-              return jsonText({ ok: false, error: errText(error) })
-            }
-          },
-        })
-        let dispose = undefined
-        try { dispose = harness.registerTool(ctx, tool) } catch (error) { /* 同名工具已被运行中实例注册（过渡期双跑）：同义跳过，既有实例同义可用 */ }
-        if (dispose !== undefined) ctx.effect(() => () => { try { dispose() } catch (error) { /* best-effort */ } })
+        libDefineJsonTool(harness, ctx, name, description, parameters, execute, timeoutMs)
       }
 
       if (skills !== undefined) {
@@ -445,6 +437,61 @@ return {
       const guard = (fn) => async (args) => {
         try { return await fn(args ?? {}) } catch (error) { return { ok: false, error: errText(error) } }
       }
+      // ── web 搜索 provider 切换（k3 UI 挂点：capm 模型 tab「网页搜索」小节） ──
+      // 写 ~/.dsh/web-search.provider.json（web-search-select.mjs 重启恢复读同一文件）；
+      // 运行时立即生效 = ctx.get('web') 直设（若动态沙箱允许）；不允许则仅落盘，重启由 select.mjs 应用。
+      harness.handle('capmgr/webSearch.get', guard(async () => {
+        const home = await home3()
+        const r = await sh3(q3('console.log((()=>{try{return JSON.stringify(JSON.parse(require("fs").readFileSync(' + JSON.stringify(home + '/web-search.provider.json') + ',"utf8")))}catch(e){return "{}"}})())'), 8000)
+        let saved = {}
+        try { saved = JSON.parse(r.text) } catch (e) { /* default */ }
+        const web = ctx.get('web')
+        const current = (web !== undefined && typeof web.searchProviderId === 'string' && web.searchProviderId.length > 0)
+          ? web.searchProviderId
+          : (typeof saved.provider === 'string' ? saved.provider : '')
+        const providers = [
+          { id: 'deepseek-official', name: 'DeepSeek（官方搜索，用余额）', available: true },
+          { id: 'kimi-coding', name: 'kimi-coding（订阅搜索，KIMI_CODING_API_KEY）', available: true },
+        ]
+        return { ok: true, current, providers, note: current === '' ? '未指定 source（多 provider 并存时可能 AMBIGUOUS）：请选择。' : '' }
+      }))
+      harness.handle('capmgr/webSearch.set', guard(async (args) => {
+        const provider = String(args?.provider ?? '').trim()
+        if (provider === '') return { ok: false, error: 'provider required' }
+        if (provider !== 'deepseek-official' && provider !== 'kimi-coding') return { ok: false, error: 'unknown provider ' + provider }
+        const home = await home3()
+        const script = 'const fs=require("fs");const p=' + JSON.stringify(home + '/web-search.provider.json') + ';const d={provider:' + JSON.stringify(provider) + ',updatedAt:Date.now()};'
+          + 'try{const tmp=p+".tmp";fs.writeFileSync(tmp,JSON.stringify(d,null,2));fs.renameSync(tmp,p)}catch(e){console.error(e.message)};console.log("ok")'
+        const w = await sh3(q3(script), 8000)
+        if (w.exitCode !== 0 || w.text.trim() !== 'ok') return { ok: false, error: '写盘失败: ' + (w.err.trim() || w.text.trim()).slice(0, 200) }
+        // 运行时直设（best-effort：动态沙箱允许则立即生效）
+        let live = false
+        const web = ctx.get('web')
+        if (web !== undefined && web !== null) {
+          try { web.searchProviderId = provider; live = true } catch (error) { /* falls back to restart */ }
+        }
+        return { ok: true, provider, live, note: live ? '已切换（立即生效）' : '已写盘（重启后生效；select.mjs 重启自动恢复）' }
+      }))
+      harness.handle('capmgr/tools.inventory', guard(async () => {
+        const tools = ctx.get('tools')
+        if (tools === undefined || typeof tools.entries !== 'function') return { ok: false, error: 'tools service unavailable' }
+        const rows = []
+        try {
+          const map = tools.entries()
+          const iterable = map !== null && typeof map === 'object' && typeof map[Symbol.iterator] === 'function' ? map : []
+          for (const [name, def] of iterable) {
+            if (name === undefined || name === null) continue
+            const d = def !== null && typeof def === 'object' ? def : {}
+            rows.push({
+              name: String(name),
+              description: typeof d.description === 'string' ? d.description : '',
+              hasSchema: d.schema !== undefined || d.parameters !== undefined,
+            })
+          }
+        } catch (error) { /* best-effort */ }
+        return { ok: true, count: rows.length, tools: rows }
+      }))
+
       harness.handle('capmgr/mcp.list', guard(async () => {
         const loader = ctx.get('loader')
         if (loader === undefined || typeof loader.entries !== 'function') return { ok: false, error: 'loader service unavailable' }
@@ -539,13 +586,17 @@ return {
         }).filter((r) => r.id !== '')
         const injector = (reg !== null && typeof reg === 'object' && Array.isArray(reg.plugins) ? reg.plugins : []).map((r) => {
           const name = String(r !== null && typeof r === 'object' ? r.name ?? '' : '')
+          // 2026-09-01 名字归一化：loader 条目名会被前缀化（_dsh-forge_plasmid-live），注册表名是 @dsh-forge/plasmid-live；
+          // 去非字母数字后小写比较，两边可配上（修状态误报）
+          const norm = (v) => String(v).toLowerCase().replace(/[^a-z0-9]+/g, '')
+          const nname = norm(name)
           return {
             kind: 'injector',
             id: name,
             name,
             dir: String(r !== null && typeof r === 'object' ? r.dir ?? '' : ''),
             disabled: r !== null && typeof r === 'object' && r.disabled === true,
-            running: name !== '' && loaderNames.some((n) => n === name),
+            running: name !== '' && loaderNames.some((n) => n === name || norm(n) === nname),
           }
         }).filter((r) => r.id !== '')
         return { ok: true, dynboot, injector, hotStopAvailable: runner !== undefined }
