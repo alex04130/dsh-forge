@@ -9,7 +9,7 @@ Topics: `dsh-plugin` `deepseek-harness` `dsh` `cordis` · 更多社区插件见 
 
 ## 这是什么
 
-dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-patch 任何 npm 包。当前规模：host 插件 15 个 / 动态插件 12 条 / 模型工具 49 个 / npm latest `@dsh-forge/bundle` **0.1.5**。
+dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-patch 任何 npm 包。当前规模：host 插件 15 个 / 动态插件 12 条（其中 gitdk、stfx 默认关）/ 模型工具 49 个 / npm **latest `@dsh-forge/bundle` 0.1.5** · **preview 0.2.0-preview.1（`--tag preview`，不覆盖 latest）**。
 
 核心能力：
 
@@ -20,7 +20,7 @@ dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-pa
 | **Skill 管理器** | 统一管理全部技能：持久化增删启停、内容预览、内置 runtime 技能（跨会话邮箱 / 模型委派 / agent 团队）收敛为一处管理，设置页面板 + 模型工具双通道 |
 | **插件管理面板** | 实时发现宿主/注入/官方三类 loader 条目 + 动态插件运行/停止/删除，搜索 + 分区导航 |
 | **会话管理** | mailbridge：列表 / 查找 / 归档 / 捞回 / 导出（含子树、工作区过滤）；sesmgr 侧栏「已归档」面板（v8，SVG 徽章 + 窄轨 wide 契约） |
-| **档案 · 质粒 · 验货** | archive 证据句柄（`sessionId:seq`）；plasmid 自荐 / 检索 / fitness + `gap_report`；`verify_claim` 对 git-commit / file / text-in-file 显式验货 |
+| **档案 · 质粒 · 验货** | archive 证据句柄（`sessionId:seq`）；plasmid v0 自荐 / 检索 / fitness + `gap_report`（已进 npm insert）；`verify_claim` 对 git-commit / file / text-in-file 显式验货；控制台数据面 `console.mjs` 骨架已在仓库（**未进 npm insert**——完整 PDA（横栏/真队/通话 live）在运行时，随下一同步批转正） |
 
 协作与编排层（15 个 host 插件）。`bundle/cordis.patch.yml` 与 npm 0.1.5 的 `cordis.npm.yml` **insert 15 行**；`archive` / `verify` / `plasmid` 自 0.1.5 写入 insert（#71 拍板；plsm 不进 insert，随动态清单走）。
 
@@ -38,7 +38,7 @@ dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-pa
 - `verify` — 言行一致检查器 v0：verify_claim 显式验货，只读
 - `plasmid` — 最薄质粒 v0：submit/search/get/report + gap_report，四道闸 + fitness
 
-动态插件（`dynamic/auto-plugins.json`，12 条，`gitdk` 禁用）：模式下拉框（modpk）、模型+等级选择器（modlpk）、子代理图片补丁（imgsub）、技能管理面板（sklui）、插件市场面板（plins）、会话查找（sfind）、sesmgr（子会话归档/删除 UI，v8）、plsm（质粒面板 v0.1.1，只读；数据面走包私有 RPC，client 禁 fetch）。补丁型：subflt（子代理 report/结算通道 steer 化 + 同轮去重）、stfx（侧栏 Settings 行对齐）、steer（子代理会话 Ctrl+Enter 插话）。多面板 clientCode 中英双语（`locale.active` + 缺席回退英文）。
+动态插件（`dynamic/auto-plugins.json`，12 条，`gitdk` / `stfx` 默认关——stfx 已并入 forge-shell 退役）：模式下拉框（modpk）、模型+等级选择器（modlpk）、子代理图片补丁（imgsub）、技能管理面板（sklui）、插件市场面板（plins）、会话查找（sfind）、sesmgr（子会话归档/删除 UI，v8）、forge-shell（徽章/面板统一壳）、plsm（质粒面板 v0.2.x-shell 迁移态；数据面走包私有 RPC，client 禁 fetch）、capmgr（三合一能力管理 v2.1：插件管理+技能+MCP+模型四 tab）。补丁型：subflt（子代理 report/结算通道 steer 化 + 同轮去重）、steer（子代理会话 Ctrl+Enter 插话）。多面板 client 中英双语（`locale.active` + 缺席回退英文）。
 
 ## 为什么叫 forge
 
@@ -53,6 +53,16 @@ dsh plugin --profile web add @dsh-forge/bundle
 ```
 
 `@dsh-forge/bundle` 声明官方 `dsh.bundle.patch` manifest，`dsh plugin add` 会自动把它注册进 profile 的 patch 层；装完重启 DSH（`dsh web`）即可。需要 **0.1.4+**（0.1.3 及更早版本在 npm 路径下 boot 失败，为已知历史 bug）。npm 0.1.5 的 insert 已含 archive / verify / plasmid：`dsh plugin add` 后随重启自动挂上。
+
+**预览通道（0.2.0-preview.1，`--tag preview`，不覆盖 latest）**：
+
+```sh
+dsh plugin --profile web add @dsh-forge/bundle@0.2.0-preview.1
+```
+
+preview 与 latest 的 insert 相同（15 行）；控制台 / featsw / auth 源码随包但**不在 insert**，不自动挂载。
+
+> ⚠️ **升级注意**：宿主停留在 **DSH 0.1.2-alpha.3 / rc.1**，**不要升 0.1.3**——0.1.3-alpha.1 的会话迁移器拒绝 0.1.2-alpha.x 写入的日志（`replayState.kind` 成员），全部 alpha.4 前写手代的历史不可加载（fail-closed，源文件无损），跨版本 resume 亦报 `cursor behind the last applied entry`。实测证据见 [0.1.3 上游适配审计](docs/audits/upstream-0.1.3-adaptation-audit.md)。
 
 **可选组件：任务感知路由 preset（手动复制）**
 
