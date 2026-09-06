@@ -12,3 +12,4 @@ Thumbs.db
 # runtime backups written by scripts/install.mjs target $DSH_HOME (~/.dsh),
 # which lives outside this repository; keep it out of the repo if it is ever
 # cloned into DSH_HOME itself.
+.tmp-omdsh/
