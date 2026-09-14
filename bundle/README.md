@@ -4,6 +4,8 @@
 
 GitHub: [alex04130/dsh-forge](https://github.com/alex04130/dsh-forge) · License: MIT
 
+> ⚠️ **工具名版本差（0.2.0 发布前必须对齐）**：随包工具名是前缀化前老名(`session_*` / `model_*` / `dev_*` / `teams`)，当前运行面是 `forge_*`。0.2.0 发布前必须落一次「仓库 `plugins/*.mjs` 注册名 == 运行面采集名」对齐，否则 README/handbook 与随包名继续错位。
+
 ## 安装
 
 ```sh
@@ -20,12 +22,12 @@ peer 依赖：`@deepseek-ai/dsh-skill` 与 `@deepseek-ai/dsh-tools`（均为 `>=
 
 1. 安装后**重启 DSH**（`dsh web`）。
 2. （可选）新建会话选择 **router-standard** preset（任务感知思维模式路由）——npm 包**不含** preset 与动态面板，需从[源码仓库](https://github.com/alex04130/dsh-forge) `presets/` 复制到 `$DSH_HOME/.agent-presets/`。
-3. 运行时验证：`dev_plugin_status`（注入器）、`skill_list`（技能）、`model_taxonomy`（路由）、`dev_router_status`（思维模式路由）。
+3. 运行时验证：`dev_plugin_status`（注入器）、`model_taxonomy`（路由）。`skill_list` 由动态插件 sklui 提供（源码装才有，不在 bundle 内）；`dev_router_status` 已不存在。
 
 ## 包含内容
 
 - `cordis.patch.yml` — host 插件装配清单（默认**不含** GitHub MCP 条目；手动可选配置见[主 README](https://github.com/alex04130/dsh-forge#readme)）。
-- `plugins/` — 10 个 host 插件：
+- `plugins/` — host 插件（insert 共 15 行：13 个 `.mjs` 插件 + `@dsh-forge/dsh-dynrestore` + `@dsh-forge/dsh-plugmgr`）：
   - `mailbridge` 跨会话邮箱（session_list / session_read / session_send / mailbox_check，离线持久排队 + wake 冷启动）
   - `teamhub` agent 团队（captain + 成员子代理 + 依赖任务板 + 成员间消息）
   - `modsub` 子代理派发（spawn_model_subagent：provider/model/effort/mode/sandbox 可选，默认全继承父级，提权审批）
