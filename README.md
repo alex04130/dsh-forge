@@ -9,7 +9,7 @@ Topics: `dsh-plugin` `deepseek-harness` `dsh` `cordis` · 更多社区插件见 
 
 ## 这是什么
 
-dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-patch 任何 npm 包。当前规模：host 插件 15 个 / 动态插件 12 条（其中 gitdk、stfx 默认关）/ 模型工具 49 个 / npm **latest `@dsh-forge/bundle` 0.1.4** · **preview 0.2.0-preview.1（`--tag preview`，不覆盖 latest）**。
+dsh-forge 跑在 `~/.dsh` 用户层，不 monkey-patch npm 包。用 npm 安装 `@dsh-forge/bundle` 会往 profile 写入 **15 行** host 插件（`mailbridge` / `llmrouter` / `modeswitch` / `teamhub` / `modsub` / `injector` / `skillmanager` / `modelroute` / `dynboot` / `imgsubbridge` / `dynrestore` / `plugmgr` / `archive` / `verify` / `plasmid`）。源码安装还能带上动态面板和 `router-standard` preset。
 
 核心能力：
 
@@ -19,18 +19,18 @@ dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-pa
 | **任务感知思维模式路由**（router-standard preset） | 首条消息分类 spec（先计划）/ react（直接干）/ weak（模型自路由），首轮极简锚定 + 首个 tool/call 后放全量工具；锚定仅对 deepseek 系列生效 |
 | **Skill 管理器** | 统一管理全部技能：持久化增删启停、内容预览、内置 runtime 技能（跨会话邮箱 / 模型委派 / agent 团队）收敛为一处管理，设置页面板 + 模型工具双通道 |
 | **插件管理面板** | 实时发现宿主/注入/官方三类 loader 条目 + 动态插件运行/停止/删除，搜索 + 分区导航 |
-| **会话管理** | mailbridge：列表 / 查找 / 归档 / 捞回 / 导出（含子树、工作区过滤）；sesmgr 侧栏「已归档」面板（v8，SVG 徽章 + 窄轨 wide 契约） |
-| **档案 · 质粒 · 验货** | archive 证据句柄（`sessionId:seq`）；plasmid v0 自荐 / 检索 / fitness + `gap_report`（已进 npm insert）；`verify_claim` 对 git-commit / file / text-in-file 显式验货；控制台数据面 `console.mjs` 骨架已在仓库（**未进 npm insert**——完整 PDA（横栏/真队/通话 live）在运行时，随下一同步批转正） |
+| **会话管理** | mailbridge：`forge_mailbridge_list`（含 query 查找）/ `_list_archived` / `_archive`（`undo:true` 捞回）/ `_export` / `_read` / `_send` / `_check`；sesmgr 侧栏「已归档」面板（v8，SVG 徽章 + 窄轨 wide 契约） |
+| **档案 · 质粒 · 验货** | archive 用 `sessionId:seq` 当证据句柄；plasmid 自荐 / 检索 / 回报；`verify_claim` 核对 git-commit / 文件 / 文内片段。这三件随 npm 包挂上。控制台 UI 不随 npm 包自动挂，要从源码装。 |
 
-协作与编排层（15 个 host 插件）。`bundle/cordis.patch.yml` 与 npm 0.2.0-preview.1 的 `cordis.npm.yml` **insert 15 行**；`archive` / `verify` / `plasmid` 自 0.2.0-preview.1 起写入 insert（#71 拍板；plsm 不进 insert，随动态清单走；0.1.4 为最后一个 latest 稳定版，insert 12 行）。
+这 15 个 host 插件装完就能调。`archive` / `verify` / `plasmid` 从 0.2.0-preview.1 起随包挂上（更早的 latest 没有这三件，要自己补）。控制台 / featsw / 质粒面板不在这 15 行里，源码安装才有。
 
-- `mailbridge` — 跨会话邮箱 + 会话管理：session_list / session_find（sfind 委托）/ session_list_archived / session_archive / session_unarchive / session_export / session_read / session_send / mailbox_check
+- `mailbridge` — 跨会话邮箱 + 会话管理：`forge_mailbridge_list`（加 query 就是按标题/id 找）/ `forge_mailbridge_list_archived` / `forge_mailbridge_archive`（捞回：同一工具加 `undo: true`）/ `forge_mailbridge_export` / `forge_mailbridge_read` / `forge_mailbridge_send` / `forge_mailbridge_check`
 - `skillmanager` — 持久技能注册表（增删启停、默认注入）；模型工具与设置页 UI 由动态插件 sklui 挂在同一服务上
-- `teamhub` — Claude-Code 风格 agent 团队：captain + 成员子代理 + 依赖排序任务板 + 成员间直连消息
-- `llmrouter` — 多厂商模型委派：model_list / model_call，一次任务丢给任意 provider/model
-- `modelroute` — 子代理模型继承策略（永不静默升级到更贵 tier）+ 模型系列 taxonomy + plan 计费路由
-- `modeswitch` / `modsub` — 会话中途切 preset；指定模型 spawn 子代理
-- `injector` — BepInEx 式运行时注入：symlink + loader.create + 持久注册表，重启自动恢复
+- `teamhub` — 代理团队：队长会话 + 成员（可续子代理，或 `existingSessionId` 拉已有 peer）+ 依赖任务板 + 消息墙（`forge_team_*`；模板合成 `forge_team_template`）
+- `llmrouter` — 多厂商模型委派：`forge_model_list` / `forge_model_call`，一次任务丢给任意 provider/model
+- `modelroute` — 子代理模型继承策略（不把孩子静默升到更贵档）+ 模型系列 taxonomy + plan 计费路由（`forge_model_taxonomy` / `forge_model_route_status`）
+- `modeswitch` / `modsub` — 会话中途切 preset（`switch_mode` / `session_mode`）；指定模型 spawn 子代理
+- `injector` — 运行时注入：symlink + loader.create + 持久注册表，重启自动恢复（`forge_dev_inject_plugin` / `_uninject_plugin` / `_reload_package` / `_plugin_status`）
 - `dynboot` / `dynrestore` — auto-plugins.json 动态插件重启恢复 + 页面刷新重挂客户端
 - `imgsub-bridge` — 子代理图片消息转附件引用
 - `plugmgr` — 插件管理面板（@local/dsh-plugmgr 双面包）
@@ -38,7 +38,7 @@ dsh-forge 是运行在 `~/.dsh` 用户层的一整套 DSH 扩展，不 monkey-pa
 - `verify` — 言行一致检查器 v0：verify_claim 显式验货，只读
 - `plasmid` — 最薄质粒 v0：submit/search/get/report + gap_report，四道闸 + fitness
 
-动态插件（`dynamic/auto-plugins.json`，12 条，`gitdk` / `stfx` 默认关——stfx 已并入 forge-shell 退役）：模式下拉框（modpk）、模型+等级选择器（modlpk）、子代理图片补丁（imgsub）、技能管理面板（sklui）、插件市场面板（plins）、会话查找（sfind）、sesmgr（子会话归档/删除 UI，v8）、forge-shell（徽章/面板统一壳）、plsm（质粒面板 v0.2.x-shell 迁移态；数据面走包私有 RPC，client 禁 fetch）、capmgr（三合一能力管理 v2.1：插件管理+技能+MCP+模型四 tab）。补丁型：subflt（子代理 report/结算通道 steer 化 + 同轮去重）、steer（子代理会话 Ctrl+Enter 插话）。多面板 client 中英双语（`locale.active` + 缺席回退英文）。
+动态面板（源码安装才有）：模式下拉（modpk）、技能管理（sklui）、插件市场（plins）、会话归档 UI（sesmgr）、forge-shell、质粒面板（plsm）、能力管理（capmgr）。会话查找已经并进 `forge_mailbridge_list({ query })`，不必再装独立查找工具。
 
 ## 为什么叫 forge
 
@@ -105,7 +105,7 @@ token 由 DSH 进程环境变量 `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_TOKEN`
 
 ## 验证
 
-`npm run check`（全部 host/client 代码语法自检）。运行时验证：`dev_plugin_status`（注入器）、`skill_list`（技能）、`model_taxonomy`（路由）、`dev_router_status`（思维模式路由）。plsm 面板探针：`node scripts/verify-plsm.cjs`（维护者本机，依赖本机 chromium 缓存）。
+`npm run check`（语法自检）。装完可在会话里调 `forge_dev_plugin_status`（npm 0.2.0-preview.1 为 `dev_plugin_status`）、`skill_list`、`forge_model_taxonomy`（npm 为 `model_taxonomy`）确认挂上了。维护者本机还有 `node scripts/verify-plsm.cjs`（依赖 chromium 缓存）。
 
 ## 平台支持
 
@@ -113,12 +113,12 @@ Windows / macOS / Linux 全平台可用：
 
 - **路径运行时派生**：host 静态插件用 `process.env.DSH_HOME || join(os.homedir(), '.dsh')` 解析 DSH 家目录。**已拍板例外**：动态 host 半部无 `process` 全局，`plsm.host.js` 使用部署常量 `/home/alex/.dsh/plasmids/registry.json`（#71；`sandboxPolicy.workspaceRoot` 是部署 home 而非会话工作区，不能拿来拼 `~/.dsh`）。
 - **注入与安装**：`scripts/install.mjs` 与注入器均带 win32 junction 回退（无符号链接权限时自动降级）。
-- **动态插件 shell 操作**（插件市场 / session_find 等）全部改写为 `node -e` 跨平台实现（bash 与 pwsh 双壳安全引用），不依赖 POSIX 命令。
+- **动态插件 shell 操作**（插件市场等）改写为 `node -e` 跨平台实现（bash 与 pwsh 双壳安全引用），不依赖 POSIX 命令。会话查找走 `forge_mailbridge_list({ query })`，不再有独立 `session_find` 工具。
 - 发布脚本 `scripts/publish-client-packages.sh` 为维护者本机专用（POSIX），不影响使用端。
 
 ## 已知限制
 
-- **teamhub**：队长代认领的任务，成员本人无法 update（assignee 记录 memberId、鉴权用 sessionId）；`team_create` / `team_add_member` 的审批等待会串行阻塞其他 `team_*` 调用（P1 顺延项）。
+- **teamhub**：队长代认领的任务，成员本人无法 update（assignee 记录 memberId、鉴权用 sessionId）；`forge_team_create` / `forge_team_add_members` 的审批等待会串行阻塞其他 `forge_team_*` 调用（P1 顺延项）。
 - **市场安装的插件以宿主进程权限执行**（与 `dsh plugin add` 同样无沙箱隔离）：只安装审查过来源的仓库；面板内已有警示横幅。
 - **动态 client 半部禁 fetch**：面板数据面必须走 `host.call` / `harness.handle` 包私有 RPC（UI-LESSONS #16）；fs 的「不存在」是 `FS_NOT_FOUND`，不是 Node `ENOENT`。
 
@@ -139,20 +139,22 @@ Windows / macOS / Linux 全平台可用：
 
 ## 工具定义
 
-本套件注册的全部模型工具，按插件分组（49 个；gitdk 四工具已禁用，不计）：
+模型工具按插件分组（当前运行面工具名，R17 后为 `forge_*` 前缀；gitdk 默认关，不计）：
+
+> ⚠️ **npm 0.2.0-preview.1 随包仍是前缀化前的老名**：mailbridge=`session_list` 等 `session_*`+`mailbox_check`、llmrouter=`model_list`/`model_call`、injector=`dev_inject_plugin`/`dev_uninject_plugin`/`dev_injected_list`/`dev_reload_package`/`dev_plugin_status`、teamhub=`teams`+`team_template_*`、modelroute=`model_taxonomy`/`model_route_status`、modeswitch=`switch_mode`/`session_mode`。下表 `forge_*` 为源码/新版随包名；装 0.2.0-preview.1 的按老名调。
 
 | 插件 | 工具与用途 |
 |---|---|
-| **mailbridge**（跨会话消息桥 + 会话管理） | `session_list`（列出会话，工作区/归档过滤）、`session_list_archived`、`session_archive`、`session_unarchive`、`session_export`、`session_read`、`session_send`、`mailbox_check` |
-| **llmrouter**（模型委派） | `model_list`（provider/model 目录 + byModel 反向索引）、`model_call`（一次性文本补全，非子代理） |
+| **mailbridge**（跨会话消息桥 + 会话管理） | `forge_mailbridge_list`（列出会话，工作区/归档过滤，query 即查找）、`forge_mailbridge_list_archived`、`forge_mailbridge_archive`（`undo:true` 捞回）、`forge_mailbridge_export`、`forge_mailbridge_read`、`forge_mailbridge_send`、`forge_mailbridge_check` |
+| **llmrouter**（模型委派） | `forge_model_list`（provider/model 目录 + byModel 反向索引）、`forge_model_call`（一次性文本补全，非子代理） |
 | **modeswitch** | `switch_mode`（当前会话中途切换 agent preset，提权需确认）、`session_mode`（查询任意会话当前生效的模式） |
-| **teamhub**（代理团队） | `team_create` / `team_add_member` / `team_add_members` / `team_create_task` / `team_claim_task` / `team_update_task` / `team_wait` / `team_send_message` / `team_status` / `team_delete` |
+| **teamhub**（代理团队） | `forge_team_create` / `forge_team_add_members` / `forge_team_create_task` / `forge_team_claim_task` / `forge_team_update_task` / `forge_team_wait` / `forge_team_send_message` / `forge_team_status` / `forge_team_delete` / `forge_team_template`（save/search/distill/export/import/remove 合成） |
 | **modsub**（子代理派发） | `spawn_model_subagent`（可指定 provider/model/reasoningEffort/mode/sandbox，默认全继承父，提权自动审批） |
-| **injector**（运行时注入） | `dev_inject_plugin` / `dev_uninject_plugin` / `dev_injected_list` / `dev_reload_package` / `dev_plugin_status` |
-| **modelroute**（路由策略） | `model_taxonomy`（模型系列与档位）、`model_route_status`（当前路由与父路由钳制） |
+| **injector**（运行时注入） | `forge_dev_inject_plugin` / `forge_dev_uninject_plugin` / `forge_dev_reload_package` / `forge_dev_plugin_status` |
+| **modelroute**（路由策略） | `forge_model_taxonomy`（模型系列与档位）、`forge_model_route_status`（当前路由与父路由钳制） |
 | **skillmanager + sklui**（技能管理） | `skill_list` / `skill_show` / `skill_add` / `skill_disable` / `skill_enable` / `skill_remove`（持久技能，支持默认注入 / 渐进式披露） |
 | **plins**（插件市场） | `dev_stop_dyn_plugin`（按前缀紧急停动态插件）；另有市场面板 RPC（browse / installed / install / uninstall） |
-| **sfind** | `session_find`（按 id/标题关键字查会话，省上下文） |
+| **sfind** | 已退役（默认 disabled）。查找并进 `forge_mailbridge_list({ query })` |
 | **archive**（项目档案 v0） | `archive_read_event`（证据句柄 sessionId:seq 精确读取 + 上下文窗口）、`archive_list_events`（事件索引）、`archive_filter_events`（类型/关键字过滤）、`archive_trace`（会话血缘追踪） |
 | **verify**（言行一致检查器 v0） | `verify_claim`（git-commit / file / text-in-file 三类型显式验货，evidence 带原文供独立复核） |
 | **plasmid**（最薄质粒 v0） | `plasmid_submit`（四道闸自荐）、`plasmid_search`（拉取制+适应度）、`plasmid_get`（全文）、`plasmid_report`（fitness 反馈）、`gap_report`（缺口报告，outlet 三选一） |
@@ -167,7 +169,7 @@ Windows / macOS / Linux 全平台可用：
 
 ```
 bundle/     host 插件（cordis.patch.yml + plugins/*.mjs + @local 客户端包，可发布 dsh bundle；含 archive/verify/plasmid 与 plsm.{host,client}.js）
-dynamic/    动态插件清单（auto-plugins.json，12 条）
+dynamic/    动态插件清单（源码安装用）
 presets/    router-standard agent 预设
 scripts/    install.mjs / check.mjs / verify-plsm.cjs（plsm 面板 playwright 探针，维护者本机）
 docs/       roadmap.md（总体规划/路线图）+ audits/（审计与评估报告）+ 架构文档（注入方式对比、分层规则、锚定规则、cache 规则、npm 升级风险、自研 subagent provider 设计）；工具详细定义含 archive / verify / plasmid
