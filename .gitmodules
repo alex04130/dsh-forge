@@ -1,0 +1,3 @@
+[submodule "docs/handbook"]
+	path = docs/handbook
+	url = git@github-alex04130:alex04130/dsh-plugin-handbook.git
