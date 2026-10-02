@@ -125,27 +125,47 @@ async function installDynplugins() {
   }
 }
 
-async function mergePatch() {
-  step('4/6 cordis.patch.yml 合并（标记包裹，幂等）')
+// 4/7 —— **不再写 profile 的 cordis.patch.yml**。
+//
+// 官方 `cordis-plugin-development` 技能原话：
+//   "Do not write the profile's `package.json` or `cordis.patch.yml` …
+//    `install_bundle` performs those steps."
+//
+// 退役它的直接理由是那段合并有个**会吞掉用户设置行**的分支：`MARK_START` 在、
+// `MARK_END` 不在时，它从该处一路删到**文件末尾** —— 而设置面写入的行恰好追加在末尾。
+// 2026-10-02 实测证据：用户的 `llm-pi-ai`（kimi provider 配置）在 01:56:04→02:08:34
+// 之间从文件里消失，此后 21 份备份全部没有它；同一时段没有任何本脚本的备份痕迹。
+//
+// 行现在由 bundle 承载（`bundle/cordis.patch.yml` + 官方 `install_bundle`）。
+// 这一步只做两件事：报告哪些条件没满足；若旧标记块还在，**提示**清理（不替用户删）。
+async function reportPatchOwnership() {
+  step('4/7 cordis.patch.yml —— 不再写入（行改由 bundle 承载）')
   const patchPath = join(DSH_HOME, 'profiles', PROFILE, 'cordis.patch.yml')
-  const srcPatch = await readFile(join(ROOT, 'bundle/cordis.patch.yml'), 'utf8')
-  const srcInsert = srcPatch.split('\n').filter((l) => !l.startsWith('#')).join('\n').trim()
   let existing = ''
   try {
     existing = await readFile(patchPath, 'utf8')
-  } catch { /* fresh profile */ }
-
-  const startIdx = existing.indexOf(MARK_START)
-  if (startIdx !== -1) {
-    const endIdx = existing.indexOf(MARK_END)
-    existing = (existing.slice(0, startIdx) + existing.slice(endIdx === -1 ? existing.length : endIdx + MARK_END.length)).trimEnd()
+  } catch { /* fresh profile：没有这个文件是正常的 */ }
+  if (existing.includes(MARK_START) || existing.includes(MARK_END)) {
+    console.log('  ! 这个 profile 的 patch 里还留着旧安装器的标记块：')
+    console.log('      ' + MARK_START + ' … ' + MARK_END)
+    console.log('    行现在由 bundle 承载，这段会与 bundle 重复声明同一批 id；')
+    console.log('    本脚本不再动这个文件，请手工删掉该段。')
+  } else {
+    log('patch 里没有旧标记块')
   }
-  await backup(patchPath)
-  const block = '\n' + MARK_START + '\n' + srcInsert + '\n' + MARK_END + '\n'
-  const merged = existing.trimEnd() + block
-  await mkdir(dirname(patchPath), { recursive: true })
-  await writeFile(patchPath, merged, 'utf8')
-  log(patchPath)
+  try {
+    const pkg = JSON.parse(await readFile(join(DSH_HOME, 'profiles', PROFILE, 'package.json'), 'utf8'))
+    const linked = pkg.dependencies !== undefined && pkg.dependencies['@dsh-forge/bundle'] !== undefined
+    const selected = Array.isArray(pkg.dsh?.profile?.bundles) && pkg.dsh.profile.bundles.includes('@dsh-forge/bundle')
+    log('bundle 依赖=' + String(linked) + '  已在 bundles 里选中=' + String(selected))
+    if (!selected) {
+      console.log('  ! forge 的 bundle 还没被选中。装它请用官方工具（不要用 shell 复刻）：')
+      console.log('      plugin_manager  action: install_bundle')
+      console.log('      target: ' + join(ROOT, 'bundle'))
+    }
+  } catch {
+    console.log('  ! 读不到 profile 的 package.json，无法判断 bundle 是否已装')
+  }
 }
 
 // 安装器**曾经**写进这台机器的 idPrefix。只在没有 `_managed` 记账的旧安装上用到 ——
@@ -310,7 +330,7 @@ try {
   await installPlugins()
   await installPackages()
   await installDynplugins()
-  await mergePatch()
+  await reportPatchOwnership()
   await mergeDynamic()
   await syncPresetBundle()
   await ensureProfileManifest()

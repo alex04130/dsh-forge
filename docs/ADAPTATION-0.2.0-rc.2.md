@@ -2330,3 +2330,89 @@ featsw 不在其中（它走 bundle）✓，所以不影响下一步。
 我写的 `props.useSessions((x) => x.current)` 恒为 `undefined` → 服务端 `str()` 成空串。
 官方取法（`ui-workspace/src/client/tree.ts:38` 的 `mainSessionId`）是从 `byId` 里挑
 `retainedBy.mainView > 0` 的那个。已按此改写。
+
+## 6.23 用户设置文件的三个写者，与割接带来的两个后果（2026-10-02）
+
+### 起因：kimi provider 配置"重启就掉"
+
+操作员报告 `Settings → 模型` 里 `kimi-coding` 条目消失，会话报
+`no adapter registered for provider "kimi-coding"`（那条列表按**已注册的 adapter** 列，
+所以 adapter 掉了条目就不出现 —— 两者是同一件事）。
+
+### 实测证据：它在 01:56→02:08 之间从文件里消失，此后一直缺席
+
+逐份查 desktop profile 的全部 22 份 `cordis.patch.yml` 备份，看有没有真正的
+`- id: llm-pi-ai` 行：
+
+```
+01:48  bak-…06-53-43   有
+01:56  bak-…07-08-33   有
+02:08  bak-…07-11-41   没有     ← 从这一刻起
+02:11 … 09:38（其后 21 份，含割接前后三份）  全部没有
+```
+
+**所以它既不是运行中重组丢的、也不是我的割接删的**（割接时它已缺席 7 个半小时）。
+它是**文件层面的配置丢失**，此后操作员一直靠手工补回。
+
+反证："写 patch 触发运行中重组 → provider 掉注册"这条**没有复现**：操作员在 Settings 里
+改设置（11:20:37 写入 `permission` 预设 + `ui-theme`，patch 3492→3929 字节）→ 触发一次重组 →
+`include:llm-pi-ai` 仍然 `phase=active`。
+
+### 根因类别：**一个用户设置文件有三个写者**
+
+| 写者 | 会不会丢行 |
+|---|---|
+| `install.mjs` 的 `mergePatch()` | **会** —— `MARK_START` 在而 `MARK_END` 不在时，它从该处**一路删到文件末尾**，而设置面写入的行恰好追加在末尾（`llm-pi-ai` 就是末尾行） |
+| `hotmgr` | 不会 —— 只做单行 `name:` 替换（`text.replace(re, …)`） |
+| 官方设置面 | 未知 —— 整份重写还是逐行改没查 |
+
+`llm-pi-ai` 消失的那个窗口里**没有任何 `install.mjs` 的备份痕迹**（它每次写前都备份，动过就留痕），
+所以那一次不是它。**但它是仅剩的、有代码证据会丢行的那一个**，而且随时可能再来一次。
+
+### 已办：`install.mjs` 不再写 profile patch
+
+官方技能原话：
+
+> **Do not write the profile's `package.json` or `cordis.patch.yml`** … `install_bundle` performs those steps.
+
+`mergePatch()` 已替换为 `reportPatchOwnership()`：**只报告、不写盘** ——
+报告旧标记块是否残留（提示手工清理）、bundle 是否已装并被选中，未满足就打印官方装法。
+
+**验证**：跑一次 `install.mjs` 后 profile patch 的 **hash 与 mtime 均未变**（此前每次都写 + 备份）。
+
+### 割接的后果一：`hotmgr` 的静态热重载对 bundle 承载的行**失效**
+
+`hotmgr.reloadStaticPlugin()` 只认 profile patch：
+
+```js
+const text = await readFile(PATCH_PATH, 'utf8')                     // 只读 profile 的 patch
+if (!re.test(text)) return { ok: false, error: 'patch row not found for ' + base }
+```
+
+它靠把行里的 `name:` 改成 `./plugins/<base>.rN.mjs`（新文件名 = 新 URL）来绕过 Node 的 ESM 缓存。行改由 bundle 承载之后，**profile patch 里没有这些行** → 必然 `patch row not found`
+→ **静态热重载对 bundle 承载的行失效**（能力损失，值得修）。
+
+> **更正（同日晚）：我先前在这里写过"失败路径先 undefine 再报错，所以插件停在 undefined，
+> 这就是那 6 行 `fiberPhase=null` 的原因"—— 那是从代码片段误推的，已撤回。**
+> 读全两个函数后的实情：
+> - `reloadStaticPlugin`（L136-151）**不动任何实例**：只 `copyFile` + 改 patch 行；
+>   行不在 profile patch 时**早退返回`patch row not found`**，插件保持原状。
+> - `reloadPrefix`（L73-121）是**动态插件**那条路，而且顺序**是对的**：
+>   先 `define`+`runHostHalf` 尝新，**只有新版启动成功才删旧**（L110-119，注释写明"失败保旧版"）。
+>
+> **所以 `hotmgr` 解释不了那 6 行的 `fiberPhase: null`**，成因**重新回到未知**。
+
+**临时处置（仍在生效）**：在 profile patch 里用 home patch 同 id 覆盖回这 6 行
+（`# forge-six-fallback` 段）。实测它们随即从 `.r1.mjs` 加载并 `phase=active`
+—— 反过来说明 `hotmgr` 的重载**只有在行位于 profile patch 里时才成功**。
+
+**因此「把这 6 行移回 bundle」不能单独做** —— 那会再次切断 `hotmgr` 的重载。
+正确的修法是让 `hotmgr` 支持 bundle 承载的行：**外科式追加一条 override 行**
+（`- id: <base>` + `name: ./plugins/<base>.rN.mjs`），而不是整份重写 profile patch。
+这一步**尚未做**。
+
+### 割接的后果二：`bundle/cordis.npm.yml` 与 `scripts/gen-npm-bundle.mjs` 已成孤儿
+
+`bundle/package.json` 的 `dsh.bundle.patch` 已改指 `cordis.patch.yml`（相对路径版；
+相对路径锚在 patch 文件旁，**link 装与 npm 装都能解析**）。因此 npm 变体与它的生成器
+已无引用，由接手提交会话一并删除（本仓库 dev `d2b6193`）。
