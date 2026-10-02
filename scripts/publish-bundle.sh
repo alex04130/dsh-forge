@@ -63,7 +63,8 @@ for row in dsh-dynrestore dsh-mailbridge-card dsh-forge-ui; do
   echo "[publish-bundle] registry 核对：@dsh-forge/$row@$VERSION -> $seen"
 done
 
-(cd "$TMP/bundle" && npm publish --access public --cache /tmp/npm-cache)
+# --tag next：npm 11 起 prerelease 不指定 dist-tag 会拒绝发布（避免污染 latest）。
+(cd "$TMP/bundle" && npm publish --access public --tag next --cache /tmp/npm-cache)
 
 echo "[publish-bundle] 完成：@dsh-forge/bundle@$VERSION"
 echo "[publish-bundle] 发布后请回归：npm run check + docs/PLATFORM-VERIFY.md 清单"

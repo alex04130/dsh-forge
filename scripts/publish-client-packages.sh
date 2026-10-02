@@ -31,7 +31,8 @@ for pair in dynrestore:dsh-dynrestore dsh-plugmgr:dsh-plugmgr dsh-forge-ui:dsh-f
     delete j.private
     fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n')
   "
-  (cd "$TMP/$pkg" && npm publish --access public --cache /tmp/npm-cache)
+  # --tag next：npm 11 起 prerelease 不指定 dist-tag 会拒绝发布（避免污染 latest）。
+  (cd "$TMP/$pkg" && npm publish --access public --tag next --cache /tmp/npm-cache)
   # 发布后核对：registry 上的 name/version 必须与刚发的一致（防 dir/name 分叉静默错发）。
   seen="$(npm view "@dsh-forge/$pkg" name version --cache /tmp/npm-cache)"
   echo "$seen"
