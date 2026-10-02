@@ -1,97 +1,39 @@
 {
   "version": 1,
+  "_paths": "hostFile/clientFile are relative to DSH_HOME. dynboot and forgeboot2 resolve them through resolveDynPath (lib/forge-common.mjs); absolute paths pass through, so the old deployment manifest pinned to /home/alex still works. Do NOT hand these to readFile() raw: the host process CWD is the PROFILE directory (~/.dsh/profiles/<p>), where dynplugins/ does not exist, so every row failed with ENOENT on Windows until 2026-10-02.",
+  "_scope": "Mirrors the live deployment's ENABLED rows only. The seven disabled rows (gitdk, modlpk, imgsub, sfind, subflt, stfx, trout) are not carried into the repo.",
   "plugins": [
-    {
-      "idPrefix": "gitdk",
-      "name": "gitdock v8 完整版（宿主+客户端）",
-      "purpose": "补齐 pkg-6 漏发的宿主半侧：git 工具与面板 handlers + v8 客户端（会话列右缘抽屉）。",
-      "disabled": true,
-      "hostFile": "/home/alex/.dsh/dynplugins/gitdk.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/gitdk.client.js"
-    },
     {
       "idPrefix": "modpk",
       "name": "modepicker 模式下拉框（非存活会话可切换）",
       "purpose": "宿主端新增 sessionPersistence 回退：会话不在进程内时，读日志 fold 当前模式、append agent-preset/selected 事件实现延迟切换；客户端不变。",
-      "hostFile": "/home/alex/.dsh/dynplugins/modpk.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/modpk.client.js"
-    },
-    {
-      "idPrefix": "modlpk",
-      "name": "modelpick 模型+等级选择器（持久化回退）",
-      "purpose": "新增宿主半部：live 会话直接 append+flush request/header；非存活会话用 sessionPersistence.inspect+append 延迟写入；目录用 llm.listProviders/listModels/resolveModelInfo 自建，客户端改走 host.call。",
-      "hostFile": "/home/alex/.dsh/dynplugins/modlpk.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/modlpk.client.js"
-    },
-    {
-      "idPrefix": "imgsub",
-      "name": "imgsub 客户端补丁（RPC 直投 + 宿主桥接）",
-      "purpose": "客户端绕过硬拒绝，把原始图片块经 api.subagents.prompt 直投；落盘附件由宿主组合里的 imgsub-bridge.mjs 完成（重启后生效）。",
-      "hostFile": "/home/alex/.dsh/dynplugins/imgsub.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/imgsub.client.js"
-    },
-    {
-      "idPrefix": "sfind",
-      "disabled": false,
-      "name": "session_find 会话查找工具",
-      "purpose": "session_find 工具：会话关键字查找（工作区过滤/归档可见性），委托 sessionmgmt 服务。",
-      "clientCode": null,
-      "hostFile": "/home/alex/.dsh/dynplugins/sfind.host.js"
-    },
-    {
-      "idPrefix": "subflt",
-      "disabled": false,
-      "name": "subagent settle/report 去重（过渡补丁）",
-      "purpose": "subagent report/steer 通道 + 同期去重：包装 subagents.reportFrom 让报告走 steer（父忙时同轮注入，与结算通知同策略）；pre-step 只过滤同轮已有结算通知的重复 report（中途汇报保留）。",
-      "clientCode": null,
-      "hostFile": "/home/alex/.dsh/dynplugins/subflt.host.js"
-    },
-    {
-      "idPrefix": "stfx",
-      "disabled": true,
-      "name": "settingsfix Settings 行对齐 + cordis 面板锚定（已并入 fshell，退役）",
-      "purpose": "设置行与侧栏 badge 对齐（49px 高 / 12px 左缘 / 256px 宽 / 14px 图标），cordis 动态面板 bottom 128px→112px。",
-      "hostFile": "/home/alex/.dsh/dynplugins/stfx.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/stfx.client.js"
+      "hostFile": "dynplugins/modpk.host.js",
+      "clientFile": "dynplugins/modpk.client.js",
+      "note": "deployment already carries inspectCompat + appendCompat (0.1.5 seam)"
     },
     {
       "idPrefix": "steer",
       "disabled": false,
       "name": "子代理 Ctrl+Enter 插话（host 直发 steer）",
       "purpose": "子代理会话 Ctrl/Cmd+Enter 插话：官方输入框全保留，document capture 拦截按键后经 Package RPC 由 host 直接 agent.steer（绕过官方 client 对子代理丢弃 prompt mode 的路径）；失败自动退回官方行为。",
-      "hostFile": "/home/alex/.dsh/dynplugins/steer.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/steer.client.js"
+      "hostFile": "dynplugins/steer.host.js",
+      "clientFile": "dynplugins/steer.client.js"
     },
     {
-      "idPrefix": "sesmgr",
+      "idPrefix": "forgetools",
+      "name": "forge 工具半部（技能管理 + 动态件急停）",
+      "purpose": "2026-10-02 UI 大改：原 forge-ui 动态件的**全部面板与整个客户端半部**已删除（功能壳 / 已归档 / 质粒 / 插件安装 / 技能管理 / 能力 / 模型），只保留 7 个模型可见工具：skill_list / skill_show / skill_add / skill_disable / skill_enable / skill_remove 与 forge_dev_stop_dyn_plugin。**没有 clientFile，也没有任何 harness.handle**（原来约 50 个）。技能状态归 skillRegistry 服务，本行不持有。UI 已迁到静态客户端包 @local/dsh-forge-ui。",
+      "hostFile": "dynplugins/forge-tools.host.js",
+      "disabled": false
+    },
+    {
+      "idPrefix": "featui",
+      "name": "featsw WebUI 设置页",
+      "purpose": "官方 Settings → 功能开关：总闸 + 功能行 + 放弃/保存。控制台是其中一项。",
+      "hostFile": "dynplugins/featui.host.js",
+      "clientFile": "dynplugins/featui.client.js",
       "disabled": false,
-      "name": "sessmgr：子会话归档/删除 UI",
-      "purpose": "子会话目录三分区（运行中/未归档/已归档）+ 侧栏已归档面板 + 删除弹窗；宿主半部为 sessionmgmt 的薄 RPC 委托（session.archive/unarchive/delete/deletePreview/export）。",
-      "hostFile": "/home/alex/.dsh/dynplugins/sesmgr.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/sesmgr.client.js"
-    },
-    {
-      "idPrefix": "fshell",
-      "name": "forge-shell 徽章/面板统一壳 v0.1.1",
-      "purpose": "面板族统一壳：独占 sidebar.footer.action 一坑渲染整条徽章轨（顺序/分组间距壳内闭环）；provide forgeShell.registerFeature + helpers.useZh；ErrorBoundary 隔离；可订阅 registry 支持热更新。评审包 REVIEW-fs.md，独立复现 14/14。",
-      "hostCode": "",
-      "disabled": false,
-      "clientFile": "/home/alex/.dsh/dynplugins/fshell.client.js"
-    },
-    {
-      "idPrefix": "plsm",
-      "disabled": false,
-      "name": "plsm 质粒面板 v0.2.2-shell（壳迁移态）",
-      "purpose": "壳迁移版：inject forgeShell 声明式 registerFeature（chrome/i18n 上交壳）；host 半部不动。回滚=clientCode 换回 wiring/plsm.client.rollback-standalone.js。",
-      "hostFile": "/home/alex/.dsh/dynplugins/plsm.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/plsm.client.js"
-    },
-    {
-      "idPrefix": "capm",
-      "name": "capmgr 三合一能力管理 v2（插件管理+技能+MCP+模型，壳原生）",
-      "purpose": "能力管理：插件管理（启停/质粒配置/featsw 占位）+ 技能 + MCP + 模型（provider/订阅登录/默认模型）",
-      "hostFile": "/home/alex/.dsh/dynplugins/capm.host.js",
-      "clientFile": "/home/alex/.dsh/dynplugins/capm.client.js"
+      "note": "save = direct write (authoritative) + best-effort setGate notify"
     }
   ]
 }

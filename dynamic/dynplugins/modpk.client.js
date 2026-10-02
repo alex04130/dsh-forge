@@ -24,6 +24,9 @@ return {
           code: { name: 'PTC 模式', description: '具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。' },
           minimal: { name: '极简模式', description: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。' },
           cordis: { name: '创造模式', description: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。' },
+          'forge-team': { name: 'Forge 团队', description: '标准编码工具齐全，并以 PTC 方式呈现（模型用一个 TypeScript 程序组合多步操作）。带团队协作工具。不派子代理。' },
+          'forge-team-creative': { name: 'Forge 创造', description: '在干活岗基础上多一套自省工具——能查看运行时、试验插件、编写新的 agent preset。带团队协作工具。不派子代理。' },
+          'forge-team-distill': { name: 'Forge 蒸馏', description: '读会话日志，把要点与决策写成项目记忆，归档已用过的会话。' },
         },
       } : {
         choose: 'Choose mode',
@@ -36,6 +39,9 @@ return {
           code: { name: 'PTC Mode', description: 'All standard-mode capabilities, with tools presented through the Code Mode SDK so the model composes multi-step operations in one TypeScript program.' },
           minimal: { name: 'Minimal Mode', description: 'A two-tool coding agent with only a persistent bash and str_replace_editor.' },
           cordis: { name: 'Creation Mode', description: 'For building custom agent presets: all standard-mode capabilities plus runtime inspection, plugin experiments, and preset authoring guidance.' },
+          'forge-team': { name: 'Forge Team', description: 'In-team work face. PTC, no subagents, no slider.' },
+          'forge-team-creative': { name: 'Forge Creative', description: 'In-team authoring face. Cordis tools + PTC, no subagents, no slider.' },
+          'forge-team-distill': { name: 'Forge Distill', description: 'Project distill post. Read sessions, write project memory, no subagents.' },
         },
       }
     }
@@ -95,6 +101,7 @@ return {
       const sessionId = typeof props.sessionId === 'string' ? props.sessionId : ''
       const [state, setState] = React.useState({ ok: false, loading: true, current: null, presets: [] })
       const [open, setOpen] = React.useState(false)
+      const [anchor, setAnchor] = React.useState(null) // { top, right, maxHeight } —— 视口坐标
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState(null)
 
@@ -107,7 +114,9 @@ return {
         })
       }
 
-      React.useEffect(() => { refresh() }, [sessionId])
+      React.useEffect(() => {
+        refresh()
+      }, [sessionId])
 
       const select = (presetId) => {
         setBusy(true)
@@ -141,7 +150,21 @@ return {
         'aria-label': t.currentLabel(currentName),
         title: t.currentTitle,
         disabled: busy === true || state.loading === true,
-        onClick: () => {
+        onClick: (event) => {
+          // 菜单必须逃出祖先的 overflow:hidden：.wSkVaW_root 与 .pI_x6G_centerCol 都是 hidden，
+          // absolute + right:0 会让 300px 宽的面板向左伸出容器，左边被裁掉（行首文字消失的事实成因）。
+          // 改 position:fixed + 按触发器 rect 定位：既逃出裁剪，又保住"右缘对齐触发器"的外观。
+          try {
+            const rect = event !== undefined && event.currentTarget !== undefined ? event.currentTarget.getBoundingClientRect() : undefined
+            if (rect !== undefined) {
+              const top = rect.bottom + 6
+              setAnchor({
+                top: top,
+                right: Math.max(8, window.innerWidth - rect.right),
+                maxHeight: Math.max(160, window.innerHeight - top - 16),
+              })
+            }
+          } catch (error) { setAnchor(null) }
           setOpen((wasOpen) => !wasOpen)
           setError(null)
           refresh()
@@ -168,9 +191,15 @@ return {
             React.createElement('span', { className: 'modepicker-item-desc' }, displayDescription(preset, t)))
         })
 
+      const menuStyle = anchor === null ? undefined : {
+        position: 'fixed',
+        top: anchor.top + 'px',
+        right: anchor.right + 'px',
+        maxHeight: anchor.maxHeight + 'px',
+      }
       const menu = open === false ? null : React.createElement('span', null,
         React.createElement('span', { className: 'modepicker-backdrop', onClick: () => setOpen(false) }),
-        React.createElement('div', { className: 'modepicker-menu', role: 'menu' }, items))
+        React.createElement('div', { className: 'modepicker-menu', role: 'menu', style: menuStyle }, items))
 
       const errorNode = error === null ? null : React.createElement('div', { className: 'modepicker-error' }, String(error))
 

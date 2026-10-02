@@ -1,0 +1,15 @@
+# dsh-forge is developed on both Linux and Windows, so line endings are pinned
+# explicitly. Without this, a Windows checkout with core.autocrlf=true
+# normalizes the whole tree to CRLF on commit and produces a repository-wide
+# diff that buries the real change.
+* text=auto eol=lf
+
+# Binary assets must never be text-normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.onnx binary

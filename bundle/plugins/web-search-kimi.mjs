@@ -2,8 +2,8 @@
 // 背景：DSH 原生 web-search-deepseek 用 deepseek-official 余额跑搜索（余额 ¥10.48 告急，用户保留给搜索）；
 // kimi 订阅同样支持 Anthropic web_search server 工具（实测 2026-08-27：server_tool_use + web_search_tool_result 块齐）——写 kimi 版
 // 注册进 ctx.web.searchProviders（id=kimi-coding），与 deepseek-official 并存，用户配置 web.searchProvider 切换。
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { WebError } from '@deepseek-ai/dsh-web'
+import z from '@deepseek-ai/schemastery'
 import { errText } from './lib/forge-common.mjs'
 
 const KIMI_PROVIDER_ID = 'kimi-coding'
@@ -12,7 +12,7 @@ const KIMI_DEFAULT_MODEL = 'kimi-for-coding'
 const KIMI_API_VERSION = '2023-06-01'
 const KIMI_DEFAULT_MAX_TOKENS = 4096
 const KIMI_DEFAULT_MAX_USES = 5
-const NS = 'web-search-kimi'
+// 设置命名空间由 loader 的 entry id 决定（entry.options.id 即 ns），这里不再自带常量。
 
 const isPositiveInteger = (v) => Number.isInteger(v) && v > 0
 
@@ -115,53 +115,51 @@ class KimiSearchProvider {
   }
 }
 
-export default {
-  inject: ['web'],
-  apply(ctx) {
-    let current = () => ({})
-    const resolveOptions = () => {
-      const c = current()
-      const apiKeyEnv = c.apiKeyEnv ?? 'KIMI_CODING_API_KEY'
-      const credentials = ctx.get('credentials')
-      const resolveApiKey = credentials !== undefined
-        ? async () => (await credentials.resolve(apiKeyEnv))?.value
-        : undefined
-      return {
-        baseURL: c.baseURL ?? KIMI_BASE_URL,
-        model: c.model ?? KIMI_DEFAULT_MODEL,
-        apiVersion: c.apiVersion ?? KIMI_API_VERSION,
-        maxTokens: c.maxTokens ?? KIMI_DEFAULT_MAX_TOKENS,
-        maxUses: c.maxUses ?? KIMI_DEFAULT_MAX_USES,
-        apiKey: undefined,
-        resolveApiKey,
-      }
+// 0.2.0-rc.2 的插件配置是**声明式**的：具名导出 `Config` 为一个 Schemastery Schema
+// （Cordis 以 Standard Schema 消费：`runtime.Config['~standard'].validate(config)`），
+// 运行时从 `apply(ctx, config)` 的**第二个参数**读，字段是 volatile 引用，用 `.get()` 取值。
+//
+// 旧写法调 `settings.installSection(...)` —— 这个方法在 0.2.0-rc.2 的 ctx.settings 上
+// **根本不存在**（只有 configure / prepareDocument / describe / update / replace / mutate），
+// 于是 typeof 守卫静默跳过，这个 provider 的设置表单从来没装上过。
+//
+// 必须用**具名导出**且**不能有 default export**：Cordis 的 loader 走
+// `exports.default ?? exports`，有 default 就会遮蔽 `Config`，schema 永远读不到。
+export const name = 'web-search-kimi'
+export const inject = ['web']
+export const Config = z.object({
+  apiKey: z.string().role('secret').volatile(),
+  apiKeyEnv: z.string().role('credential-ref').default('KIMI_CODING_API_KEY').volatile(),
+  baseURL: z.string().default(KIMI_BASE_URL).volatile(),
+  model: z.string().default(KIMI_DEFAULT_MODEL).volatile(),
+  apiVersion: z.string().default(KIMI_API_VERSION).volatile(),
+  maxTokens: z.number().step(1).min(1).default(KIMI_DEFAULT_MAX_TOKENS).volatile(),
+  maxUses: z.number().step(1).min(1).default(KIMI_DEFAULT_MAX_USES).volatile(),
+})
+
+export function apply(ctx, config) {
+  const read = (field, fallback) => {
+    const value = typeof config[field]?.get === 'function' ? config[field].get() : config[field]
+    return value === undefined || value === null || value === '' ? fallback : value
+  }
+  const resolveOptions = () => {
+    // apiKeyEnv 缺省时回落到环境变量名；凭证经 credentials 服务解析（同官方 provider）。
+    const apiKeyEnv = read('apiKeyEnv', 'KIMI_CODING_API_KEY')
+    const credentials = ctx.get('credentials')
+    const resolveApiKey = credentials !== undefined
+      ? async () => (await credentials.resolve(apiKeyEnv))?.value
+      : undefined
+    return {
+      baseURL: read('baseURL', KIMI_BASE_URL),
+      model: read('model', KIMI_DEFAULT_MODEL),
+      apiVersion: read('apiVersion', KIMI_API_VERSION),
+      maxTokens: read('maxTokens', KIMI_DEFAULT_MAX_TOKENS),
+      maxUses: read('maxUses', KIMI_DEFAULT_MAX_USES),
+      apiKey: read('apiKey', undefined),
+      resolveApiKey,
     }
-    const provider = new KimiSearchProvider(() => resolveOptions())
-    // 新版 dsh-settings（2026-09 大更新）移除了 installSettingsSection/settingsNamespace 导出，
-    // 改为 settings 服务的 installSection(owner, ns, schemaFn, entry, hooks)；schema 从属性表变成可调用函数。
-    const settings = ctx.get('settings')
-    if (settings !== undefined && typeof settings.installSection === 'function') {
-      const schema = (value) => {
-        const input = value !== null && typeof value === 'object' ? value : {}
-        const out = {}
-        for (const key of ['baseURL', 'model', 'apiKeyEnv']) {
-          if (input[key] === undefined) continue
-          if (typeof input[key] !== 'string') throw new TypeError('web-search-kimi.' + key + ' must be a string')
-          out[key] = input[key]
-        }
-        for (const key of ['maxUses', 'maxTokens']) {
-          if (input[key] === undefined) continue
-          if (!isPositiveInteger(input[key])) throw new TypeError('web-search-kimi.' + key + ' must be a positive integer')
-          out[key] = input[key]
-        }
-        return out
-      }
-      settings.installSection(ctx, NS, schema, { maxUses: 5, maxTokens: 4096 }, {
-        setSource: (source) => { current = source },
-        onChange: () => {},
-      })
-    }
-    ctx.web.registerSearchProvider(provider)
-    console.log('[web-search-kimi] provider registered: kimi-coding 订阅搜索')
-  },
+  }
+  const provider = new KimiSearchProvider(() => resolveOptions())
+  ctx.web.registerSearchProvider(provider)
+  console.log('[web-search-kimi] provider registered: kimi-coding 订阅搜索')
 }

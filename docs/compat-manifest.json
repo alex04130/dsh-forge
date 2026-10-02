@@ -1,27 +1,65 @@
 {
   "$schema": "./compat-manifest.schema.md",
   "version": 1,
-  "updated": "2026-09-01",
+  "updated": "2026-10-02",
+  "dshBaseline": "0.2.0-rc.2",
   "generatedBy": "scripts/gen-compat-manifest.mjs",
   "services": [
+    {
+      "id": "agentPresets",
+      "methods": [],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\lib\\spawn-model-subagent.mjs",
+        "bundle\\plugins\\modeswitch.mjs",
+        "bundle\\plugins\\teamhub.mjs",
+        "dynamic\\dynplugins\\modpk.host.js"
+      ]
+    },
     {
       "id": "agents",
       "methods": [
         "currentInitiator",
         "get",
+        "list",
         "resume"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/lib/subagent-policy.mjs",
-        "bundle/plugins/mailbridge.mjs",
-        "bundle/plugins/modelroute.mjs",
-        "bundle/plugins/modeswitch.mjs",
-        "bundle/plugins/teamhub.mjs",
-        "dynamic/dynplugins/capm.host.js",
-        "dynamic/dynplugins/modlpk.host.js",
-        "dynamic/dynplugins/modpk.host.js",
-        "dynamic/dynplugins/steer.host.js",
-        "dynamic/dynplugins/subflt.host.js"
+        "bundle\\plugins\\console.mjs",
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\forgeboot2.mjs",
+        "bundle\\plugins\\hotmgr.mjs",
+        "bundle\\plugins\\lib\\compdist.mjs",
+        "bundle\\plugins\\lib\\subagent-policy.mjs",
+        "bundle\\plugins\\lib\\team-org.mjs",
+        "bundle\\plugins\\lib\\team-org.r1.mjs",
+        "bundle\\plugins\\lib\\team-org.r2.mjs",
+        "bundle\\plugins\\mailbridge.mjs",
+        "bundle\\plugins\\modelroute.mjs",
+        "bundle\\plugins\\modeswitch.mjs",
+        "bundle\\plugins\\teamhub.mjs",
+        "dynamic\\dynplugins\\forge-tools.host.js",
+        "dynamic\\dynplugins\\modpk.host.js",
+        "dynamic\\dynplugins\\steer.host.js"
+      ]
+    },
+    {
+      "id": "approval",
+      "methods": [
+        "request"
+      ],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\codexsub.mjs",
+        "bundle\\plugins\\lib\\console-gates.mjs",
+        "bundle\\plugins\\lib\\spawn-model-subagent.mjs",
+        "bundle\\plugins\\lib\\team-org.mjs",
+        "bundle\\plugins\\lib\\team-org.r1.mjs",
+        "bundle\\plugins\\lib\\team-org.r2.mjs",
+        "bundle\\plugins\\modeswitch.mjs",
+        "bundle\\plugins\\teamhub.mjs"
       ]
     },
     {
@@ -30,16 +68,87 @@
         "saveImage",
         "validateImage"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/imgsub-bridge.mjs"
+        "bundle\\plugins\\imgsub-bridge.mjs"
+      ]
+    },
+    {
+      "id": "authorization",
+      "methods": [],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\teamhub.mjs"
+      ]
+    },
+    {
+      "id": "cordisInspect",
+      "methods": [
+        "register"
+      ],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\cordisinspect-shim.mjs"
+      ]
+    },
+    {
+      "id": "credentials",
+      "methods": [
+        "resolve"
+      ],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\web-search-kimi.mjs"
       ]
     },
     {
       "id": "dynamicCordisRunner",
-      "methods": [],
+      "methods": [
+        "inventory"
+      ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/dynboot.mjs",
-        "dynamic/dynplugins/capm.host.js"
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\dynboot.mjs",
+        "bundle\\plugins\\forgeboot2.mjs",
+        "bundle\\plugins\\hotmgr.mjs",
+        "bundle\\plugins\\lib\\forge-common.mjs",
+        "dynamic\\dynplugins\\forge-tools.host.js"
+      ]
+    },
+    {
+      "id": "fs",
+      "methods": [
+        "readText",
+        "resolve",
+        "writeText"
+      ],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\codexsub.mjs",
+        "bundle\\plugins\\console.mjs",
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\dynboot.mjs",
+        "bundle\\plugins\\featsw.mjs",
+        "bundle\\plugins\\forgeboot2.mjs",
+        "bundle\\plugins\\hotmgr.mjs",
+        "bundle\\plugins\\injector.mjs",
+        "bundle\\plugins\\lib\\agent-teams-file.mjs",
+        "bundle\\plugins\\lib\\agent-teams-file.r1.mjs",
+        "bundle\\plugins\\lib\\compdist.mjs",
+        "bundle\\plugins\\lib\\forge-common.mjs",
+        "bundle\\plugins\\lib\\meminject.mjs",
+        "bundle\\plugins\\lib\\projects.mjs",
+        "bundle\\plugins\\lib\\team-org.mjs",
+        "bundle\\plugins\\lib\\team-org.r1.mjs",
+        "bundle\\plugins\\lib\\team-org.r2.mjs",
+        "bundle\\plugins\\lib\\teams-file.mjs",
+        "bundle\\plugins\\mailbridge.mjs",
+        "bundle\\plugins\\plasmid.mjs",
+        "bundle\\plugins\\skillmanager.mjs",
+        "bundle\\plugins\\web-search-select.mjs",
+        "dynamic\\dynplugins\\featui.host.js"
       ]
     },
     {
@@ -50,118 +159,169 @@
         "resolveModelInfo",
         "stream"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/lib/subagent-policy.mjs",
-        "bundle/plugins/llmrouter.mjs",
-        "bundle/plugins/modsub.mjs",
-        "bundle/plugins/plasmid.mjs",
-        "bundle/plugins/skillmanager.mjs",
-        "bundle/plugins/teamhub.mjs",
-        "dynamic/dynplugins/capm.client.js",
-        "dynamic/dynplugins/capm.host.js",
-        "dynamic/dynplugins/modlpk.host.js"
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\lib\\spawn-model-subagent.mjs",
+        "bundle\\plugins\\lib\\subagent-policy.mjs",
+        "bundle\\plugins\\llmrouter.mjs",
+        "bundle\\plugins\\plasmid.mjs",
+        "bundle\\plugins\\skillmanager.mjs",
+        "bundle\\plugins\\teamhub.mjs"
       ]
     },
     {
-      "id": "loader",
-      "methods": [
-        "create",
-        "entries",
-        "remove"
-      ],
-      "sources": [
-        "bundle/plugins/injector.mjs",
-        "dynamic/dynplugins/capm.client.js",
-        "dynamic/dynplugins/capm.host.js"
-      ]
-    },
-    {
-      "id": "sessionmgmt",
+      "id": "locale",
       "methods": [],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/mailbridge.mjs",
-        "dynamic/dynplugins/sesmgr.host.js",
-        "dynamic/dynplugins/sfind.host.js"
+        "dynamic\\dynplugins\\_lib.client.js",
+        "dynamic\\dynplugins\\featui.client.js",
+        "dynamic\\dynplugins\\modpk.client.js",
+        "dynamic\\dynplugins\\steer.client.js"
+      ]
+    },
+    {
+      "id": "sandboxPolicy",
+      "methods": [
+        "overrideOf"
+      ],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\lib\\spawn-model-subagent.mjs",
+        "bundle\\plugins\\teamhub.mjs"
+      ]
+    },
+    {
+      "id": "sessionController",
+      "methods": [
+        "resolveAgent"
+      ],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\mailbridge.mjs"
       ]
     },
     {
       "id": "sessionPersistence",
       "methods": [
         "inspect",
-        "list"
+        "list",
+        "open",
+        "stat"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/lib/subagent-policy.mjs",
-        "bundle/plugins/mailbridge.mjs",
-        "bundle/plugins/modeswitch.mjs",
-        "dynamic/dynplugins/modlpk.host.js",
-        "dynamic/dynplugins/modpk.host.js"
+        "bundle\\plugins\\console.mjs",
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\lib\\subagent-policy.mjs",
+        "bundle\\plugins\\lib\\team-org.mjs",
+        "bundle\\plugins\\lib\\team-org.r1.mjs",
+        "bundle\\plugins\\lib\\team-org.r2.mjs",
+        "bundle\\plugins\\mailbridge.mjs",
+        "bundle\\plugins\\modeswitch.mjs",
+        "dynamic\\dynplugins\\modpk.host.js"
       ]
     },
     {
       "id": "sessionQuery",
       "methods": [
-        "filterEvents",
-        "listEvents",
-        "readEvent",
-        "traceSession"
+        "readEvent"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/archive.mjs",
-        "bundle/plugins/plasmid.mjs"
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\plasmid.mjs"
       ]
     },
     {
       "id": "sessions",
       "methods": [
         "binding",
-        "get",
-        "open",
-        "openSubagent",
-        "refreshSubagents",
-        "setSubagentCatalogOpen"
+        "flush",
+        "get"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/injector.mjs",
-        "bundle/plugins/mailbridge.mjs",
-        "dynamic/dynplugins/capm.client.js",
-        "dynamic/dynplugins/capm.host.js",
-        "dynamic/dynplugins/imgsub.client.js",
-        "dynamic/dynplugins/modlpk.client.js",
-        "dynamic/dynplugins/modlpk.host.js",
-        "dynamic/dynplugins/sesmgr.client.js",
-        "dynamic/dynplugins/sesmgr.host.js",
-        "dynamic/dynplugins/steer.client.js"
+        "bundle\\plugins\\console.mjs",
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\injector.mjs",
+        "bundle\\plugins\\lib\\team-org.mjs",
+        "bundle\\plugins\\lib\\team-org.r1.mjs",
+        "bundle\\plugins\\lib\\team-org.r2.mjs",
+        "bundle\\plugins\\mailbridge.mjs",
+        "dynamic\\dynplugins\\forge-tools.host.js",
+        "dynamic\\dynplugins\\modpk.client.js",
+        "dynamic\\dynplugins\\steer.client.js"
+      ]
+    },
+    {
+      "id": "settings",
+      "methods": [
+        "describe",
+        "installSection"
+      ],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\skillmanager.mjs",
+        "bundle\\plugins\\web-search-kimi.mjs",
+        "dynamic\\dynplugins\\featui.client.js"
+      ]
+    },
+    {
+      "id": "shell",
+      "methods": [],
+      "dropped": [],
+      "sources": [
+        "dynamic\\dynplugins\\_lib.host.js",
+        "dynamic\\dynplugins\\modpk.client.js"
       ]
     },
     {
       "id": "skills",
       "methods": [
-        "filter",
-        "find",
         "get",
         "list",
+        "register"
+      ],
+      "dropped": [
+        "filter",
+        "find",
         "map",
         "push",
-        "register",
         "some"
       ],
       "sources": [
-        "bundle/plugins/llmrouter.mjs",
-        "bundle/plugins/mailbridge.mjs",
-        "bundle/plugins/skillmanager.mjs",
-        "bundle/plugins/teamhub.mjs",
-        "dynamic/dynplugins/capm.client.js",
-        "dynamic/dynplugins/capm.host.js",
-        "dynamic/dynplugins/modpk.client.js"
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\llmrouter.mjs",
+        "bundle\\plugins\\mailbridge.mjs",
+        "bundle\\plugins\\skillmanager.mjs",
+        "bundle\\plugins\\teamhub.mjs",
+        "dynamic\\dynplugins\\forge-tools.host.js",
+        "dynamic\\dynplugins\\modpk.client.js"
+      ]
+    },
+    {
+      "id": "slots",
+      "methods": [
+        "inject",
+        "register"
+      ],
+      "dropped": [],
+      "sources": [
+        "dynamic\\dynplugins\\featui.client.js",
+        "dynamic\\dynplugins\\modpk.client.js",
+        "dynamic\\dynplugins\\steer.client.js"
       ]
     },
     {
       "id": "storage",
       "methods": [],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/mailbridge.mjs",
-        "bundle/plugins/teamhub.mjs"
+        "bundle\\plugins\\mailbridge.mjs"
       ]
     },
     {
@@ -169,19 +329,20 @@
       "methods": [
         "interrupt",
         "prompt",
+        "registerProvider",
         "startContinuable"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/imgsub-bridge.mjs",
-        "bundle/plugins/injector.mjs",
-        "bundle/plugins/mailbridge.mjs",
-        "bundle/plugins/modsub.mjs",
-        "bundle/plugins/teamhub.mjs",
-        "dynamic/dynplugins/capm.host.js",
-        "dynamic/dynplugins/imgsub.client.js",
-        "dynamic/dynplugins/modpk.client.js",
-        "dynamic/dynplugins/sesmgr.client.js",
-        "dynamic/dynplugins/subflt.host.js"
+        "bundle\\plugins\\codexsub.mjs",
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\imgsub-bridge.mjs",
+        "bundle\\plugins\\injector.mjs",
+        "bundle\\plugins\\lib\\spawn-model-subagent.mjs",
+        "bundle\\plugins\\modsub.mjs",
+        "bundle\\plugins\\teamhub.mjs",
+        "dynamic\\dynplugins\\forge-tools.host.js",
+        "dynamic\\dynplugins\\modpk.client.js"
       ]
     },
     {
@@ -189,8 +350,23 @@
       "methods": [
         "section"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/skillmanager.mjs"
+        "bundle\\plugins\\lib\\meminject.mjs",
+        "bundle\\plugins\\skillmanager.mjs"
+      ]
+    },
+    {
+      "id": "timer",
+      "methods": [
+        "timeout"
+      ],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\lib\\console-gates.mjs",
+        "bundle\\plugins\\teamhub.mjs",
+        "dynamic\\dynplugins\\steer.client.js"
       ]
     },
     {
@@ -198,33 +374,44 @@
       "methods": [
         "register"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/archive.mjs",
-        "bundle/plugins/injector.mjs",
-        "bundle/plugins/lib/forge-tools.mjs",
-        "bundle/plugins/llmrouter.mjs",
-        "bundle/plugins/mailbridge.mjs",
-        "bundle/plugins/modelroute.mjs",
-        "bundle/plugins/modeswitch.mjs",
-        "bundle/plugins/modsub.mjs",
-        "bundle/plugins/plasmid.mjs",
-        "bundle/plugins/skillmanager.mjs",
-        "bundle/plugins/teamhub.mjs",
-        "bundle/plugins/verify.mjs",
-        "dynamic/dynplugins/capm.host.js",
-        "dynamic/dynplugins/modpk.client.js",
-        "dynamic/dynplugins/plsm.client.js",
-        "dynamic/dynplugins/sesmgr.host.js"
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\featsw.mjs",
+        "bundle\\plugins\\injector.mjs",
+        "bundle\\plugins\\lib\\console-gates.mjs",
+        "bundle\\plugins\\lib\\forge-tools.mjs",
+        "bundle\\plugins\\lib\\spawn-model-subagent.mjs",
+        "bundle\\plugins\\llmrouter.mjs",
+        "bundle\\plugins\\mailbridge.mjs",
+        "bundle\\plugins\\modelroute.mjs",
+        "bundle\\plugins\\modeswitch.mjs",
+        "bundle\\plugins\\modsub.mjs",
+        "bundle\\plugins\\plasmid.mjs",
+        "bundle\\plugins\\projmem.mjs",
+        "bundle\\plugins\\skillmanager.mjs",
+        "bundle\\plugins\\teamhub.mjs",
+        "bundle\\plugins\\web-search-kimi.mjs",
+        "dynamic\\dynplugins\\forge-tools.host.js",
+        "dynamic\\dynplugins\\modpk.client.js"
       ]
     },
     {
       "id": "web",
-      "methods": [],
+      "methods": [
+        "registerSearchProvider"
+      ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/injector.mjs",
-        "dynamic/dynplugins/capm.host.js",
-        "dynamic/dynplugins/modpk.client.js",
-        "dynamic/dynplugins/plsm.host.js"
+        "bundle\\plugins\\console.mjs",
+        "bundle\\plugins\\featsw.mjs",
+        "bundle\\plugins\\hotmgr.mjs",
+        "bundle\\plugins\\injector.mjs",
+        "bundle\\plugins\\web-search-kimi.mjs",
+        "bundle\\plugins\\web-search-select.mjs",
+        "dynamic\\dynplugins\\featui.client.js",
+        "dynamic\\dynplugins\\featui.host.js",
+        "dynamic\\dynplugins\\modpk.client.js"
       ]
     },
     {
@@ -232,35 +419,42 @@
       "methods": [
         "register"
       ],
+      "dropped": [],
       "sources": [
-        "bundle/plugins/injector.mjs",
-        "bundle/plugins/plasmid.mjs"
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\forgeboot2.mjs",
+        "bundle\\plugins\\hotmgr.mjs",
+        "bundle\\plugins\\injector.mjs",
+        "bundle\\plugins\\plasmid.mjs"
+      ]
+    },
+    {
+      "id": "workspaceRegistry",
+      "methods": [],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\mailbridge.mjs"
+      ]
+    },
+    {
+      "id": "workspaces",
+      "methods": [],
+      "dropped": [],
+      "sources": [
+        "bundle\\plugins\\control.mjs",
+        "bundle\\plugins\\lib\\team-org.mjs",
+        "bundle\\plugins\\lib\\team-org.r1.mjs",
+        "bundle\\plugins\\lib\\team-org.r2.mjs",
+        "bundle\\plugins\\mailbridge.mjs"
       ]
     }
   ],
-  "manual": [
-    {
-      "id": "web",
-      "methods": [
-        "searchProviders",
-        "searchProviderId"
-      ],
-      "sources": [
-        "runtime injector: web-search-kimi-live / web-search-provider-selector（dev-plugins，未入仓库）"
-      ],
-      "note": "初始清单手工基线（P2-1）"
-    },
-    {
-      "id": "sessionmgmt",
-      "methods": [
-        "deleteSessions",
-        "masterIdFromSessionId"
-      ],
-      "sources": [
-        "dynamic/dynplugins/sesmgr.host.js（注入服务经 svc. 别名调用，静态提取无法归名）",
-        "bundle/plugins/mailbridge.mjs（deleteSessions 守卫语义）"
-      ],
-      "note": "初始清单手工基线（P2-1）"
-    }
-  ]
+  "internal": [
+    "sessionmgmt",
+    "skillRegistry",
+    "featsw",
+    "teamDeleteApi"
+  ],
+  "manual": []
 }

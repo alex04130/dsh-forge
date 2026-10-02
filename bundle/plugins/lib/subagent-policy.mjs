@@ -1,5 +1,31 @@
 import yaml from 'js-yaml'
 
+// ── 上游 0.1.5-rc.2 兼容层（R2，2026-09-11）────────────────────────────────
+// rc.2 换掉了 sessionPersistence 的公开 API：旧 inspect(id) → { meta, events }；
+// 新 stat(id) → { header, … }（无 events）+ open(id, 'read') → handle.read() → { events }。
+// 特性探测优先新核，旧核回退，让同一份 lib 在两代核上都能跑。
+async function persistenceRead(persist, id) {
+  if (persist === undefined || persist === null) return undefined
+  if (typeof persist.stat === 'function' && typeof persist.open === 'function') {
+    const snapshot = await persist.stat(id)
+    if (snapshot === undefined || snapshot === null) return undefined
+    const handle = await persist.open(id, 'read')
+    try {
+      const result = await handle.read(0, Number.MAX_SAFE_INTEGER)
+      const events = result !== null && typeof result === 'object' && Array.isArray(result.events) ? result.events : []
+      return { events, meta: typeof snapshot === 'object' ? snapshot.header : undefined }
+    } finally {
+      try { await handle.close() } catch (error) { /* best-effort */ }
+    }
+  }
+  if (typeof persist.inspect === 'function') {
+    const inspection = await persist.inspect(id)
+    if (inspection === null || typeof inspection !== 'object') return undefined
+    return { events: Array.isArray(inspection.events) ? inspection.events : [], meta: inspection.meta }
+  }
+  return undefined
+}
+
 // ── dsh-forge shared subagent policy ────────────────────────────────────────
 // One implementation for every delegation surface (spawn_model_subagent,
 // switch_mode, team_add_member): preset capability-face comparison, model
@@ -268,14 +294,14 @@ export function installChildPolicy(ctx, presets) {
     // the log, which silently reverted deferred switches to the parent preset.
     // The hook is attached unconditionally and the inspect runs INSIDE the
     // first pre-step so the timing guarantee matches the staged path.
-    if (modeId === undefined && sid !== undefined && presets !== undefined && sessionPersistence !== undefined && typeof sessionPersistence.inspect === 'function') {
+    if (modeId === undefined && sid !== undefined && presets !== undefined && sessionPersistence !== undefined && (typeof sessionPersistence.inspect === 'function' || (typeof sessionPersistence.stat === 'function' && typeof sessionPersistence.open === 'function'))) {
       try {
         const preStepOff = agent.ctx.on('agent/pre-step', async (_payload, next) => {
           try { preStepOff() } catch (error) { /* best-effort */ }
           try {
-            const inspection = await sessionPersistence.inspect(sid)
+            const inspection = await persistenceRead(sessionPersistence, sid)
             let logged = undefined
-            for (const event of (Array.isArray(inspection.events) ? inspection.events : [])) {
+            for (const event of (inspection !== undefined && Array.isArray(inspection.events) ? inspection.events : [])) {
               if (event !== null && typeof event === 'object' && event.type === 'agent-preset/selected' && event.data !== null && typeof event.data === 'object' && typeof event.data.agentPreset === 'string') logged = event.data.agentPreset
             }
             if (logged !== undefined) {

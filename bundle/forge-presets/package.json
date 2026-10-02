@@ -1,0 +1,12 @@
+{
+  "name": "@local/dsh-forge-presets",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "description": "forge 的三个 agent preset（forge-team / forge-team-creative / forge-team-distill）以 rc.2 的 declaration rows 形态提供。"
+}

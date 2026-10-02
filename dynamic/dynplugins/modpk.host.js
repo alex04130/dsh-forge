@@ -31,7 +31,7 @@ return {
           current = presets.composedPreset(agent.ctx)
         } else if (persistence !== undefined && sessionId !== '') {
           try {
-            const inspection = await persistence.inspect(sessionId)
+            const inspection = await inspectCompat(persistence, sessionId)
             for (const event of (Array.isArray(inspection.events) ? inspection.events : [])) {
               if (event !== null && typeof event === 'object' && event.type === 'agent-preset/selected' && event.data !== null && typeof event.data === 'object' && typeof event.data.agentPreset === 'string') current = event.data.agentPreset
             }
@@ -65,10 +65,10 @@ return {
         if (agent === undefined) {
           if (persistence === undefined) return { ok: false, error: 'session "' + sessionId + '" is not live in this process' }
           try {
-            const inspection = await persistence.inspect(sessionId)
+            const inspection = await inspectCompat(persistence, sessionId)
             const events = Array.isArray(inspection.events) ? inspection.events : []
             const nextSeq = events.length > 0 ? Number(events[events.length - 1].seq) + 1 : 0
-            await persistence.append(sessionId, [{ type: 'agent-preset/selected', seq: nextSeq, time: Date.now(), data: { agentPreset: presetId } }])
+            await appendCompat(persistence, sessionId, [{ type: 'agent-preset/selected', seq: nextSeq, time: Date.now(), data: { agentPreset: presetId } }])
             return { ok: true, switchedTo: presetId, deferred: true, note: '该会话未在运行：模式已写入会话日志，下次它被唤醒时生效' }
           } catch (error) {
             return { ok: false, error: errText(error) }
@@ -93,4 +93,39 @@ return {
       }
     })
   },
+}
+
+
+// ── 0.1.5 兼容：旧 inspect(id) → { meta, events } ─────────────────────────────
+// B4 同类：rc.2 删了 sessionPersistence.inspect，新面是 stat(id)+open(id,'read')。
+// 形状差异：新 stat 给 header（无 events），所以要自己拼回旧形状。
+async function inspectCompat(persistence, id) {
+  if (persistence !== undefined && typeof persistence.stat === 'function' && typeof persistence.open === 'function') {
+    const stat = await persistence.stat(id)
+    const header = stat !== null && typeof stat === 'object' && stat.header !== null && typeof stat.header === 'object' ? stat.header : {}
+    let events = []
+    try {
+      const handle = await persistence.open(id, 'read')
+      try {
+        const chunk = await handle.read(0, Number.MAX_SAFE_INTEGER)
+        if (chunk !== null && typeof chunk === 'object' && Array.isArray(chunk.events)) events = chunk.events
+      } finally { try { await handle.close() } catch (error) { /* best-effort */ } }
+    } catch (error) { /* events 读不到就只给 meta */ }
+    return { meta: header, events }
+  }
+  return await persistence.inspect(id)
+}
+
+
+// ── 0.1.5 兼容：旧 append(id, events) → open(id,'write') 句柄上 append(events) ──
+// rc.2 的服务级 append 没了，写入必须经句柄。注意 access 只有 'read' | 'write'
+// （SessionAccess）：后端 open() 里非 'read' 一律走 claimWrite 分支，而句柄自身
+// 校验 access !== 'write' 就抛 SessionReadOnlyError —— 传 'append' 会先拿到写租约、
+// 再在 append 那一步被拒，等于没写。
+async function appendCompat(persistence, id, events) {
+  if (persistence !== undefined && typeof persistence.open === 'function' && typeof persistence.append !== 'function') {
+    const handle = await persistence.open(id, 'write')
+    try { return await handle.append(events) } finally { try { await handle.close() } catch (error) { /* best-effort */ } }
+  }
+  return await persistence.append(id, events)
 }

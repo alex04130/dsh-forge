@@ -1,8 +1,12 @@
-// description: 跨会话消息桥：session_send / session_read / mailbox_check，让同一进程内的会话互相收发消息（带 begin/end 标记）。
+// description: 跨会话消息桥：forge_mailbridge_send / forge_mailbridge_read / forge_mailbridge_check，让同一进程内的会话互相收发消息（带 begin/end 标记）。
 import { readdir, readFile, rm, writeFile, unlink, mkdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { errText, jsonText, DSH_HOME } from './lib/forge-common.mjs'
 import { registerTool } from './lib/forge-tools.mjs'
+import { loadProjects, projectOf } from './lib/projects.mjs'
+import { talkRelation, bindTalkRuntime } from './lib/team-org.r2.mjs'
+import { installConsoleGates } from './lib/console-gates.mjs'
+import { installCompactionDistill } from './lib/compdist.mjs'
 
 const SESSIONS_ROOT = DSH_HOME + '/sessions'
 const PROJCACHE_PATH = DSH_HOME + '/storages/session_projcache.json'
@@ -45,18 +49,65 @@ async function listSessionIds() {
 
 async function readTitles() {
   const titles = {}
+  // projcache 已升级（2026-09-01 dsh 改版）：旧 = session_projcache.json {tables.sessions}；
+  // 新 = session_projcache/sessions/<id>.json {record.rows.title.val}（per-record 一文件）。双路径兜底。
+  const NEW_DIR = DSH_HOME + '/storages/session_projcache/sessions'
+  const readTitleFrom = (id, rec) => {
+    const row = rec !== null && typeof rec === 'object' && rec.record !== null && typeof rec.record === 'object' && rec.record.rows !== null && typeof rec.record.rows === 'object' ? rec.record.rows.title : undefined
+    const rowV2 = rec !== null && typeof rec === 'object' && rec.rows !== null && typeof rec.rows === 'object' ? rec.rows.title : undefined
+    const r = row ?? rowV2
+    return r !== null && typeof r === 'object' && typeof r.val === 'string' && r.val.length > 0 ? r.val : undefined
+  }
+  // 新格式：逐文件读（缺失=无缓存——标题可后续冷读写入或回退日志）
   try {
-    const raw = await readFile(PROJCACHE_PATH, 'utf8')
-    const data = JSON.parse(raw)
-    const sessions = data !== null && typeof data === 'object' && data.tables !== null && typeof data.tables === 'object' ? data.tables.sessions : undefined
-    if (sessions !== null && typeof sessions === 'object') {
-      for (const id of Object.keys(sessions)) {
-        const rec = sessions[id]
-        const title = rec !== null && typeof rec === 'object' && rec.rows !== null && typeof rec.rows === 'object' && rec.rows.title !== null && typeof rec.rows.title === 'object' && typeof rec.rows.title.val === 'string' ? rec.rows.title.val : undefined
-        if (title !== undefined && title.length > 0) titles[id] = title
+    const { readdir } = await import('node:fs/promises')
+    const files = await readdir(NEW_DIR).catch(() => [])
+    for (const f of files) {
+      const id = f.replace(/\.json$/, '')
+      try {
+        const rec = JSON.parse(await readFile(join(NEW_DIR, f), 'utf8'))
+        const title = readTitleFrom(id, rec)
+        if (title !== undefined) titles[id] = title
+      } catch (e) { /* skip unreadable */ }
+    }
+  } catch (error) { /* new-dir best-effort */ }
+  // 【2026-09-01 兜底】projcache 读不到的会话——读 meta.json.title（归档会话 meta 几乎都有；快，不解压）
+  // 注意双层目录：sessions/<workspace>/<sessionId>/meta.json（单层读不到任何归档标题）
+  try {
+    const { readdir } = await import('node:fs/promises')
+    const workspaces = await readdir(DSH_HOME + '/sessions').catch(() => [])
+    for (const ws of workspaces) {
+      let ids = []
+      try {
+        ids = await readdir(join(DSH_HOME + '/sessions', ws))
+      } catch (e) { /* skip workspace */ }
+      for (const dir of ids) {
+        const metaPath = join(DSH_HOME + '/sessions', ws, dir, 'meta.json')
+        try {
+          const meta = JSON.parse(await readFile(metaPath, 'utf8'))
+          if (typeof meta.title === 'string' && meta.title.length > 0) {
+            const id = typeof meta.id === 'string' ? meta.id : dir
+            if (titles[id] === undefined) titles[id] = meta.title
+          }
+        } catch (e) { /* no meta / unreadable */ }
       }
     }
   } catch (error) { /* best-effort */ }
+
+  // 旧格式回退（.bak 前形态——兼容）
+  if (Object.keys(titles).length === 0) {
+    try {
+      const raw = await readFile(PROJCACHE_PATH, 'utf8')
+      const data = JSON.parse(raw)
+      const sessions = data !== null && typeof data === 'object' && data.tables !== null && typeof data.tables === 'object' ? data.tables.sessions : undefined
+      if (sessions !== null && typeof sessions === 'object') {
+        for (const id of Object.keys(sessions)) {
+          const title = readTitleFrom(id, sessions[id])
+          if (title !== undefined) titles[id] = title
+        }
+      }
+    } catch (error) { /* best-effort */ }
+  }
   return titles
 }
 
@@ -71,43 +122,124 @@ async function callerName(id) {
 }
 
 export default {
-  inject: ['tools', 'agents', 'sessions', 'sessionPersistence', 'storage'],
+  inject: ['tools', 'agents', 'sessions', 'sessionController', 'sessionPersistence', 'storage'],
   apply(ctx) {
     const agents = ctx.agents
     const sessions = ctx.sessions
+    // Official cold-delivery entry point: "Resolve or resume one ordinary
+    // Session, deduplicating concurrent resumes."
+    const sessionController = ctx.sessionController
     const sessionPersistence = ctx.sessionPersistence
+
+    // ── 上游 0.1.5-rc.2 兼容层（R2，2026-09-11）────────────────────────────
+    // rc.2 换掉了 sessionPersistence 的公开 API：
+    //   旧：inspect(id) → { meta, events }          ；list() → 裸 header[]
+    //   新：stat(id)    → { header, revision, … }（无 events）
+    //       open(id, 'read') → handle.read(0, MAX) → { events } → handle.close()
+    //       list()       → { header, … }[]（snapshot 包装）
+    // 三条路径都做特性探测，让同一份插件在旧核（inspect）与新核（stat/open）上都能跑。
+    function persistenceApi() {
+      if (sessionPersistence === undefined || sessionPersistence === null) return 'none'
+      if (typeof sessionPersistence.stat === 'function' && typeof sessionPersistence.open === 'function') return 'stat'
+      if (typeof sessionPersistence.inspect === 'function') return 'inspect'
+      return 'none'
+    }
+    // 读一个会话的元数据（新核 stat().header，旧核 inspect().meta）；不碰日志正文。
+    async function readSessionMetaVia(id) {
+      const api = persistenceApi()
+      if (api === 'none') return undefined
+      if (api === 'stat') {
+        const snapshot = await sessionPersistence.stat(id)
+        return snapshot !== null && typeof snapshot === 'object' ? snapshot.header : undefined
+      }
+      const inspection = await sessionPersistence.inspect(id)
+      return inspection !== null && typeof inspection === 'object' ? inspection.meta : undefined
+    }
+    // 读一个会话的全部事件；返回 { events, meta } 或 undefined。
+    async function readSessionVia(id) {
+      const api = persistenceApi()
+      if (api === 'none') return undefined
+      if (api === 'inspect') {
+        const inspection = await sessionPersistence.inspect(id)
+        if (inspection === null || typeof inspection !== 'object') return undefined
+        return { events: Array.isArray(inspection.events) ? inspection.events : [], meta: inspection.meta }
+      }
+      const snapshot = await sessionPersistence.stat(id)
+      if (snapshot === undefined || snapshot === null) return undefined
+      const meta = typeof snapshot === 'object' ? snapshot.header : undefined
+      const handle = await sessionPersistence.open(id, 'read')
+      try {
+        const result = await handle.read(0, Number.MAX_SAFE_INTEGER)
+        const events = result !== null && typeof result === 'object' && Array.isArray(result.events) ? result.events : []
+        return { events, meta }
+      } finally {
+        try { await handle.close() } catch (error) { /* best-effort */ }
+      }
+    }
     const storage = ctx.storage
+    bindTalkRuntime({ agents, sessionPersistence })
+    installCompactionDistill(ctx, { agents, sessionPersistence })
     // 宿主侧服务键名是 workspaceRegistry（apiproxy 以 workspaces 别名暴露给 client）。
     // 该服务初始化晚于本插件，必须惰性获取（apply 时刻 ctx.get 拿不到）。
     const getWorkspaces = () => ctx.get('workspaceRegistry')
     const skills = ctx.get('skills')
+    installConsoleGates(ctx)
 
-    // wake 守卫（P0-4，security review t7-H3）：冷启动任意离线会话会消耗
-    // 目标会话的模型回合并按目标的高档路由计费——限制为仅主会话可用，
-    // 并对每个目标会话限频（滑动窗口），封堵"被注入子代理循环唤醒烧预算"链。
+    // wake 守卫（P0-4 + PDA P1）：冷启动消耗目标会话回合。
+    // 同队：免批、无硬闸。同项目跨队 / 跨项目：进 console-inbox 等人批。
+    // 预算闸只拦同队 wake 的极端刷屏（项目总量），跨队不再用预算代替审批。
+    function headerOf(agent) {
+      if (agent === undefined) return undefined
+      try { return agent.session !== undefined ? agent.session.header : undefined } catch { return undefined }
+    }
     function isMainSession(exec) {
       if (exec === undefined || exec.agent === undefined) return false
-      let header = undefined
-      try { header = exec.agent.session !== undefined ? exec.agent.session.header : undefined } catch (error) { header = undefined }
+      const header = headerOf(exec.agent)
       const origin = header !== undefined ? header.origin : undefined
       const parent = header !== undefined ? header.parentSession : undefined
       if (origin === 'subagent' || (typeof parent === 'string' && parent.length > 0)) return false
       return true
     }
-    const WAKE_WINDOW_MS = 60000
-    const WAKE_LIMIT = 3
-    const wakeTimes = new Map()
-    function checkWakeAllowed(exec, targetId) {
-      if (!isMainSession(exec)) return { ok: false, error: 'wake is restricted to the main session (subagents cannot cold-start sessions)' }
-      const now = Date.now()
-      const kept = (wakeTimes.get(targetId) ?? []).filter((t) => now - t < WAKE_WINDOW_MS)
-      if (kept.length >= WAKE_LIMIT) {
-        wakeTimes.set(targetId, kept)
-        return { ok: false, error: 'wake rate limit exceeded for this target (' + WAKE_LIMIT + ' per ' + Math.round(WAKE_WINDOW_MS / 1000) + 's); wait before waking again' }
+    function cwdOfAgent(agent) {
+      const header = headerOf(agent)
+      return header !== undefined && typeof header.cwd === 'string' ? header.cwd : ''
+    }
+    async function cwdOfSessionId(id) {
+      const live = agents.get(id)
+      if (live !== undefined) {
+        const cwd = cwdOfAgent(live)
+        if (cwd !== '') return cwd
       }
-      kept.push(now)
-      wakeTimes.set(targetId, kept)
-      return { ok: true }
+      try {
+        const api = persistenceApi()
+        if (api === 'stat') {
+          const header = await readSessionMetaVia(id)
+          if (header !== null && typeof header === 'object' && typeof header.cwd === 'string') return header.cwd
+        } else if (api === 'inspect') {
+          const inspection = await sessionPersistence.inspect(id)
+          const meta = inspection !== null && typeof inspection === 'object' ? inspection.meta : undefined
+          if (meta !== null && typeof meta === 'object' && typeof meta.cwd === 'string') return meta.cwd
+          const events = Array.isArray(inspection.events) ? inspection.events : []
+          for (const event of events) {
+            if (event !== null && typeof event === 'object' && event.type === 'session' && typeof event.cwd === 'string') return event.cwd
+          }
+        }
+      } catch { /* best-effort */ }
+      return ''
+    }
+    // 互唤闸整体拆除（2026-10-02 拍板）：官方与我们都还是开发预览版，不为"模型互唤
+    // 烧预算"这个滥用面兜底。拆掉的两道：① 跨队/跨项目进 console-inbox 待批；
+    // ② 同队 wake 的速率闸（DEFAULT_WAKE 的 perTarget / projectTotal）。跨队直接放行。
+    async function checkTalkAllowed(exec, targetId) {
+      const from = callerId(exec, agents)
+      const cfg = await loadProjects()
+      const rel = talkRelation(cfg, from, targetId)
+      return {
+        ok: true,
+        intra: rel.kind === 'same-team',
+        relation: rel.kind,
+        projectId: rel.project && rel.project.id ? rel.project.id : undefined,
+      }
     }
 
     let unit = undefined
@@ -137,11 +269,11 @@ export default {
 
     // ================= 子会话归档/删除（sessionmgmt） =================
     // 规则（用户拍板 2026-08-17）：
-    //   - session_archive/unarchive 只能处理子代理（下辖任意深度），绝不能归档主代理
+    //   - forge_mailbridge_archive/unarchive 只能处理子代理（下辖任意深度），绝不能归档主代理
     //   - 删除不提供模型工具：用户经 WebUI 弹窗确认 → 宿主 RPC（前端 sessmgr）→ svc.deleteSessions
     //   - 删除主代理递归删除其整个子树（parentSession 链传递闭包）
     //   - 归档真相 = 会话目录 meta.json；上游 archivedSessionIds 为镜像（官方 UI 隐藏一致）
-    //   - session_export 递归导出整个子树为明文
+    //   - forge_mailbridge_export 递归导出整个子树为明文
 
     // 上游同款 encodeSegment（dsh-session-persistence-jsonl），用于定位目录
     function encodeSegment(raw) {
@@ -159,6 +291,36 @@ export default {
     }
 
     // 一次扫描建「id → 会话目录绝对路径」索引（含编码形态）
+    // 归档放宽（2026-09-11 用户拍板）：项目蒸馏岗可归档**同项目**会话（含主会话；可捞回）。
+    async function distillScopeOf(callerId) {
+      if (typeof callerId !== 'string' || callerId === '') return undefined
+      let cfg
+      try { cfg = await loadProjects() } catch (error) { return undefined }
+      const projects = cfg !== undefined && cfg !== null && Array.isArray(cfg.projects) ? cfg.projects : []
+      for (const p of projects) {
+        if (p !== null && typeof p === 'object' && p.distillSessionId === callerId) return p
+      }
+      return undefined
+    }
+    /** 显式记录优先于 cwd：项目 members/stale/ownedSessions 里点名的会话就是本项目的。 */
+    function explicitProjectRecord(header, project) {
+      const id = header !== null && typeof header === 'object' && typeof header.id === 'string' ? header.id : ''
+      if (id === '' || project === undefined || project === null) return false
+      // 2026-10-02 合并后，项目自己就带着 members / stale / ownedSessions，没有 teams[] 这一层。
+      if (Array.isArray(project.members) && project.members.some((m) => m !== null && typeof m === 'object' && m.sessionId === id)) return true
+      if (Array.isArray(project.stale) && project.stale.some((s) => s !== null && typeof s === 'object' && s.sessionId === id)) return true
+      if (Array.isArray(project.ownedSessions) && project.ownedSessions.includes(id)) return true
+      return false
+    }
+    function inProjectCwds(header, project) {
+      if (explicitProjectRecord(header, project)) return true
+      const cwds = project !== undefined && project !== null && Array.isArray(project.cwds) ? project.cwds : []
+      const raw = header !== null && typeof header === 'object' && typeof header.cwd === 'string' ? header.cwd : ''
+      const cwd = raw.replace(/\\/g, '/')
+      if (cwd === '') return false
+      return cwds.some((c) => typeof c === 'string' && c !== '' && cwd.indexOf(c.replace(/\\/g, '/')) === 0)
+    }
+
     async function buildSessionDirIndex() {
       const map = new Map()
       try {
@@ -219,7 +381,18 @@ export default {
       // 主会话（无 parentSession）返回自己；子会话返回其 parentSession；读不到（无持久化/无法解析）返回 undefined（fail-closed）。
       // 优先：events 里 type:session 首行（有 origin/parentSession；废弃会话常缺 meta.json 但日志必有 session 头行）。
       // 兜底：inspection.meta.parentSession。
-      if (sessionPersistence === undefined || typeof sessionPersistence.inspect !== 'function') return undefined
+      const api = persistenceApi()
+      if (api === 'none') return undefined
+      if (api === 'stat') {
+        // rc.2：header 直接带 parentSession / origin，不必读全日志
+        return sessionPersistence.stat(sessionId).then((snapshot) => {
+          const header = snapshot !== null && typeof snapshot === 'object' ? snapshot.header : undefined
+          if (header === null || typeof header !== 'object') return undefined
+          const parent = typeof header.parentSession === 'string' ? header.parentSession : ''
+          if (parent.length > 0) return parent
+          return String(header.origin ?? '') === 'subagent' ? undefined : sessionId
+        }).catch(() => undefined)
+      }
       return sessionPersistence.inspect(sessionId).then((inspection) => {
         if (inspection !== null && typeof inspection === 'object') {
           const events = Array.isArray(inspection.events) ? inspection.events : []
@@ -245,8 +418,10 @@ export default {
       if (sessionPersistence === undefined || typeof sessionPersistence.list !== 'function') {
         throw new Error('sessionPersistence.list() is not available in this deployment')
       }
-      const headers = await sessionPersistence.list()
-      return Array.isArray(headers) ? headers : []
+      const listed = await sessionPersistence.list()
+      if (!Array.isArray(listed)) return []
+      // rc.2 起 list() 返回 snapshot 包装 { header, revision, … }；旧核直接是 header。
+      return listed.map((entry) => (entry !== null && typeof entry === 'object' && entry.header !== null && typeof entry.header === 'object' ? entry.header : entry))
     }
 
     function upstreamArchivedSet() {
@@ -348,6 +523,32 @@ export default {
         return { count: list.length, sessions: list }
       },
 
+      async listProjects() {
+        const cfg = await loadProjects()
+        const { headers } = await headerIndex()
+        const byId = new Map()
+        for (const p of cfg.projects) {
+          byId.set(p.id, { ...p, implicit: false, sessions: 0, lastActiveAt: null })
+        }
+        const implicit = new Map()
+        for (const h of headers) {
+          if (h === null || typeof h !== 'object') continue
+          const cwd = typeof h.cwd === 'string' ? h.cwd : ''
+          const hit = projectOf(cfg, { sessionId: h.id, cwd })
+          let row = byId.get(hit.id)
+          if (row === undefined) {
+            row = implicit.get(hit.id)
+            if (row === undefined) {
+              row = { ...hit, sessions: 0, lastActiveAt: null }
+              implicit.set(hit.id, row)
+            }
+          }
+          row.sessions += 1
+          if (typeof h.createdAt === 'number' && (row.lastActiveAt === null || h.createdAt > row.lastActiveAt)) row.lastActiveAt = h.createdAt
+        }
+        return { ok: true, projects: [...byId.values(), ...implicit.values()] }
+      },
+
       async find({ query, limit = 20, workspace, includeArchived = false, masterId }) {
         const cap = Math.min(Math.max(1, Math.floor(limit)), 50)
         const q = String(query ?? '').toLowerCase()
@@ -412,19 +613,24 @@ export default {
       },
 
       // 归档：只允许子代理（下辖任意深度），结构性拒绝主代理
-      async archive(sessionIds, masterId, callerLabel) {
+      async archive(sessionIds, masterId, callerLabel, callerId, options) {
+        const dryRun = options !== undefined && options !== null && options.dryRun === true
         const { byId, descendantsOf } = await headerIndex()
         const dirIndex = await buildSessionDirIndex()
         const titles = await readTitles()
         const own = masterId !== undefined ? descendantsOf(masterId) : new Set()
+        const distillProject = await distillScopeOf(callerId)
         const results = []
         for (const id of sessionIds) {
           const h = byId.get(id)
           if (h === undefined) { results.push({ sessionId: id, ok: false, error: 'unknown session id; it is neither persisted nor live' }); continue }
-          if (!isSubHeader(h) || !own.has(id)) { results.push({ sessionId: id, ok: false, error: 'only sub sessions (any depth) of your own master session can be archived; main sessions are never archived this way' }); continue }
+          const ownSub = isSubHeader(h) && own.has(id)
+          const viaDistill = distillProject !== undefined && inProjectCwds(h, distillProject)
+          if (!ownSub && !viaDistill) { results.push({ sessionId: id, ok: false, error: 'only sub sessions (any depth) of your own master session can be archived; a project distill post may also archive sessions of its own project' }); continue }
           if (sessions !== undefined && sessions.get(id) !== undefined) { results.push({ sessionId: id, ok: false, error: 'session is live; wait for it to finish before archiving' }); continue }
           const dir = dirForId(dirIndex, id)
           if (dir === undefined) { results.push({ sessionId: id, ok: false, error: 'session log directory not found on disk' }); continue }
+          if (dryRun) { results.push({ sessionId: id, ok: true, dryRun: true, wouldArchive: true, scope: ownSub ? 'own-sub' : 'distill-project' }); continue }
           const notes = []
           try {
             const meta = {
@@ -627,9 +833,9 @@ export default {
             }
           } catch (error) { notes.push('archive-mark-kept: ' + errText(error)) }
           try {
-            const teamsRaw = await readFile(DSH_HOME + '/storages/agent_teams.json', 'utf8')
+            const teamsRaw = await readFile(DSH_HOME + '/projects.json', 'utf8')
             const referenced = [...subtree].filter((sid) => teamsRaw.includes('"' + sid + '"'))
-            if (referenced.length > 0) notes.push('team-records-reference-deleted-ids: ' + referenced.join(', ') + ' (cleanup tracked in backlog P1-1)')
+            if (referenced.length > 0) notes.push('team-records-reference-deleted-ids: ' + referenced.join(', ') + ' (projects.json; cleanup is console archive/remove-member)')
           } catch (error) { /* file missing = no teams */ }
           results.push({ sessionId: id, ok: true, deleted: true, subtreeSize: subtree.size, notes })
         }
@@ -667,7 +873,7 @@ export default {
       // 递归导出：target 的整个子树（子代理消息一并导出）。输出明文，不回灌内容。
       async exportSession({ targetId, format = 'markdown', maxEventsPerSession = 5000 }) {
         if (typeof targetId !== 'string' || targetId.length === 0) throw new Error('targetId is required')
-        if (sessionPersistence === undefined || typeof sessionPersistence.inspect !== 'function') throw new Error('sessionPersistence.inspect is not available in this deployment')
+        if (persistenceApi() === 'none') throw new Error('session persistence is unavailable in this deployment: the sessionPersistence service exposes neither stat/open (0.1.5+) nor inspect (legacy)')
         const fmt = format === 'jsonl' ? 'jsonl' : 'markdown'
         const { byId, descendantsOf } = await headerIndex()
         if (!byId.has(targetId)) throw new Error('unknown session id: ' + targetId)
@@ -678,14 +884,14 @@ export default {
         const cap = typeof maxEventsPerSession === 'number' && maxEventsPerSession > 0 ? Math.floor(maxEventsPerSession) : 5000
         const files = []
         for (const sid of subtree) {
-          let snapshot
+          let read
           try {
-            snapshot = await sessionPersistence.inspect(sid)
+            read = await readSessionVia(sid)
           } catch (error) {
             files.push({ sessionId: sid, ok: false, error: errText(error) })
             continue
           }
-          const events = Array.isArray(snapshot.events) ? snapshot.events : []
+          const events = read !== undefined && Array.isArray(read.events) ? read.events : []
           const truncated = events.length > cap
           const kept = events.slice(-cap)
           const title = typeof titles[sid] === 'string' ? titles[sid] : '(untitled)'
@@ -769,14 +975,27 @@ export default {
       return () => { cancelled = true }
     })
 
-    registerTool(ctx, 'session_list',
-      '列出本 DSH 进程中的会话（在线与已持久化），含 id、标题、在线状态、工作区、主从关系与归档状态。默认只列未归档会话；能看到所有主会话与自己主会话下辖的全部子会话（含子子会话）。只要知道 id 或标题片段就优先用 `session_find`；只想看某个工作区（目录）下的会话时用 `workspace` 参数过滤。完整工作流见 `cross-session-mailbox` 技能。',
+    registerTool(ctx, 'forge_mailbridge_list',
+      '列出本 DSH 进程中的会话（在线与已持久化），含 id、标题、在线状态、工作区、主从关系与归档状态。默认只列未归档会话；能看到所有主会话与自己主会话下辖的全部子会话（含子子会话）。给 query 时按 id/标题子串查找（等价于原 session_find）；只想看某个工作区（目录）下的会话时用 `workspace` 参数过滤。完整工作流见 `cross-session-mailbox` 技能。',
       {
         limit: { type: 'number', description: '最大返回会话数（默认 50，上限 200）。' },
         workspace: { type: 'string', description: '可选：只列该工作区（目录路径片段，如 "dsh-forge" 匹配某个 .../dsh-forge 目录）下的会话。' },
         includeArchived: { type: 'boolean', description: '是否包含已归档会话（默认 false=只列未归档；true 时归档会话带 archived:true 一并列出）。' },
+        query: { type: 'string', description: '可选：按会话 id 或标题子串查找（合并了原 session_find）。给了 query 即走查找语义：返回 { ok, query, count, sessions }，不降序、无 createdAt、上限 50；空串视为未给（不再像原 session_find 那样报错）。' },
       },
       async (args, exec) => {
+        const query = typeof args.query === 'string' ? args.query.trim() : ''
+        if (query !== '') {
+          // 合并原 session_find：过滤逻辑全在 svc.find 里，原样返回它的顶层形状。
+          const found = await svc.find({
+            query,
+            limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 20,
+            workspace: args.workspace,
+            includeArchived: args.includeArchived === true,
+            masterId: callerMasterId(exec),
+          })
+          return jsonText({ ok: true, ...found })
+        }
         const out = await svc.list({
           limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 50,
           workspace: args.workspace,
@@ -786,11 +1005,11 @@ export default {
         return jsonText({ ok: true, archivedHidden: args.includeArchived !== true, ...out })
       })
 
-    registerTool(ctx, 'session_list_archived',
-      '列出本主会话下辖的已归档子会话（含子子会话；这些会话已从 session_list/session_find 默认结果中隐藏，但文件仍在，可用 session_unarchive 捞出）。仅主会话可用；子代理调用会被拒绝。完整工作流见 `cross-session-mailbox` 技能。',
+    registerTool(ctx, 'forge_mailbridge_list_archived',
+      '列出本主会话下辖的已归档子会话（含子子会话）。仅主会话可用；子代理拒绝。捞出用 `forge_mailbridge_archive({ sessionIds, undo: true })`。',
       { limit: { type: 'number', description: '最大返回数（默认 50，上限 200）。' } },
       async (args, exec) => {
-        if (!isMainSession(exec)) return jsonText({ ok: false, error: 'session_list_archived is restricted to the main session' })
+        if (!isMainSession(exec)) return jsonText({ ok: false, error: 'forge_mailbridge_list_archived is restricted to the main session' })
         const out = await svc.listArchived({
           limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 50,
           masterId: callerMasterId(exec),
@@ -798,34 +1017,29 @@ export default {
         return jsonText({ ok: true, ...out })
       })
 
-    registerTool(ctx, 'session_archive',
-      '归档本主会话下辖的子会话（含子子会话；主代理不可被归档）：归档后这些会话不再出现在 session_list / session_find 的默认结果里，但文件保留，可随时用 session_list_archived 查看、用 session_unarchive 捞出。推荐在子会话完成且不需要再联系时归档，以保持会话列表清爽。仅主会话可用；不能归档运行中的会话。',
+    // R17：archive + unarchive 合成一个工具两个方向（undo:true 走捞出）。同名反向动作、参数相同、
+    // 守卫同级——合并后省一个工具面。守卫（仅主会话）与 svc 调用参数逐字保留。
+    registerTool(ctx, 'forge_mailbridge_archive',
+      '归档或捞出会话。默认只能动本主会话下辖的子会话（含子子会话）；**项目蒸馏岗**还能归档**同项目**的任意会话（含主会话）。归档后不再出现在 forge_mailbridge_list 的默认结果里，但文件保留，可用 forge_mailbridge_list_archived 查看。仅主会话可用；不能归档运行中的会话。',
       {
-        sessionIds: { type: 'array', items: { type: 'string' }, required: true, description: '要归档的子会话 id 数组（来自 session_list 中 parentSession 链指向本主会话的条目）。' },
+        sessionIds: { type: 'array', items: { type: 'string' }, required: true, description: '会话 id 数组（自己的子会话；蒸馏岗可为同项目任意会话）。' },
+        undo: { type: 'boolean', description: 'true = 捞出（取消归档）；省略或 false = 归档。' },
+        dryRun: { type: 'boolean', description: '只在归档方向有效：预演，仅报告会被归档的会话与判定范围，不写任何标记。' },
       },
       async (args, exec) => {
-        if (!isMainSession(exec)) return jsonText({ ok: false, error: 'session_archive is restricted to the main session' })
+        if (!isMainSession(exec)) return jsonText({ ok: false, error: 'forge_mailbridge_archive is restricted to the main session' })
         const ids = Array.isArray(args.sessionIds) ? args.sessionIds.map((x) => String(x)) : []
         if (ids.length === 0) return jsonText({ ok: false, error: 'sessionIds must be a non-empty array' })
+        if (args.undo === true) {
+          const out = await svc.unarchive(ids, callerMasterId(exec), false)
+          return jsonText({ ok: true, undone: true, ...out })
+        }
         const me = exec !== undefined && exec.agent !== undefined && typeof exec.agent.id === 'string' ? exec.agent.id : undefined
-        const out = await svc.archive(ids, callerMasterId(exec), me)
+        const out = await svc.archive(ids, callerMasterId(exec), me, me, { dryRun: args.dryRun === true })
         return jsonText({ ok: true, ...out })
       })
 
-    registerTool(ctx, 'session_unarchive',
-      '捞出（取消归档）本主会话下辖的已归档子会话（含子子会话；主代理的捞回在 WebUI 工作区进行）：恢复其在 session_list / session_find 中的可见性，文件位置与工作区记账不变。仅主会话可用。',
-      {
-        sessionIds: { type: 'array', items: { type: 'string' }, required: true, description: '要捞出的已归档子会话 id 数组（来自 session_list_archived）。' },
-      },
-      async (args, exec) => {
-        if (!isMainSession(exec)) return jsonText({ ok: false, error: 'session_unarchive is restricted to the main session' })
-        const ids = Array.isArray(args.sessionIds) ? args.sessionIds.map((x) => String(x)) : []
-        if (ids.length === 0) return jsonText({ ok: false, error: 'sessionIds must be a non-empty array' })
-        const out = await svc.unarchive(ids, callerMasterId(exec), false)
-        return jsonText({ ok: true, ...out })
-      })
-
-    registerTool(ctx, 'session_export',
+    registerTool(ctx, 'forge_mailbridge_export',
       '把会话（默认=调用方自己）递归导出为明文：连同其下辖全部子会话（含子子会话）的消息一并导出——子代理的对话也重要。输出到 ~/.dsh/exports/<sessionId>/（index.json + 每会话一个 .md 或 .jsonl），返回文件路径与事件计数，不回灌内容。用于用户自己翻看、迁移或留档。',
       {
         sessionId: { type: 'string', description: '要导出的根会话 id（默认=调用方当前会话）。导出包含其整个子树。' },
@@ -850,24 +1064,26 @@ export default {
     // （前端 sessmgr 插件 host.call('session.delete', ...)）→ svc.deleteSessions，
     // 传入 callerSessionId（页面当前会话）与 confirm:true。
 
-    registerTool(ctx, 'session_read',
+    registerTool(ctx, 'forge_mailbridge_read',
       '读取另一会话的近期消息日志（仅精确读取）：用户、助手和工具消息及其文本，按时间从旧到新。用于给某会话发消息前了解它在做什么，或收集它的结果。完整工作流见 `cross-session-mailbox` 技能。',
       {
-        sessionId: { type: 'string', required: true, description: '目标会话 id（来自 session_list）。' },
+        sessionId: { type: 'string', required: true, description: '目标会话 id（来自 forge_mailbridge_list）。' },
         maxEvents: { type: 'number', description: '最大返回事件数（默认 20，上限 500）。' },
       },
       async (args, exec) => {
         const sessionId = String(args.sessionId)
         if (sessionPersistence === undefined) return jsonText({ ok: false, error: 'sessionPersistence service is not available in this deployment' })
-        let snapshot
+        let read
         try {
-          snapshot = await sessionPersistence.inspect(sessionId)
+          read = await readSessionVia(sessionId)
         } catch (error) {
           return jsonText({ ok: false, error: 'failed to read session: ' + errText(error) })
         }
+        // stat() 对不存在的会话返回空值而不抛错；若不拦在这里，坏 id / 拼错的 id 会伪装成"会话存在但没有消息"。
+        if (read === undefined) return jsonText({ ok: false, error: 'session "' + sessionId + '" not found' })
         const cap = typeof args.maxEvents === 'number' && args.maxEvents > 0 ? Math.min(Math.floor(args.maxEvents), 500) : 20
         const events = []
-        for (const event of (Array.isArray(snapshot.events) ? snapshot.events : [])) {
+        for (const event of (read !== undefined && Array.isArray(read.events) ? read.events : [])) {
           let entry = undefined
           if (event.type === 'user/message') {
             entry = { type: 'user', time: event.time, text: flattenText(event.data !== undefined ? event.data.content : undefined) }
@@ -887,17 +1103,21 @@ export default {
         return jsonText({ ok: true, sessionId, count: events.length, events: events.slice(-cap) })
       })
 
-    registerTool(ctx, 'session_send',
-      '向本 DSH 进程中的另一会话发送消息。在线目标会立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。`wake: true` 时离线目标立即冷启动（加载其已持久化日志，会话重启并立刻处理该消息），而不是等它下次手动启动——用于强制睡眠中的会话现在就干活；会消耗目标会话的模型回合。wake 仅主会话可用（子代理被拒），同一目标 60 秒内最多 3 次。接收方看到的文本带 `[cross-session message from <session name> (<sessionId>)]` 前缀。完整工作流见 `cross-session-mailbox` 技能。',
+    registerTool(ctx, 'forge_mailbridge_send',
+      '向本 DSH 进程中的另一会话发送消息。在线目标会立即在收件箱收到并醒来；否则消息持久排队，在该会话下次启动时送达。`wake: true` 时离线目标立即冷启动（resolveAgent 恢复其已持久化日志并去重并发恢复，随后 followup 唤醒，最后 flush 确保落盘），而不是等它下次手动启动——用于强制睡眠中的会话现在就干活；会消耗目标会话的模型回合。互唤无审批闸、无限流（2026-10-02 拍板）。接收方看到的文本带 `[cross-session message from <session name> (<sessionId>)]` 前缀，UI 上呈现为「来自会话 X」的投递卡片。完整工作流见 `cross-session-mailbox` 技能。',
       {
-        targetSessionId: { type: 'string', required: true, description: '目标会话 id（来自 session_list）。' },
+        targetSessionId: { type: 'string', required: true, description: '目标会话 id（来自 forge_mailbridge_list）。' },
         text: { type: 'string', required: true, description: '目标会话的消息正文。' },
-        wake: { type: 'boolean', description: '是否强制唤醒离线目标：从其已持久化日志冷启动并立即送达（默认 false = 持久排队）。会消耗目标会话的模型回合；仅主会话可用，同一目标 60 秒内最多 3 次。' },
+        wake: { type: 'boolean', description: '是否强制唤醒离线目标：从其已持久化日志冷启动并立即送达（默认 false = 持久排队）。会消耗目标会话的模型回合。无审批、无限流。' },
       },
       async (args, exec) => {
         const targetId = String(args.targetSessionId)
         let body = String(args.text)
         if (body.length === 0) return jsonText({ ok: false, error: 'text must not be empty' })
+        const talkCheck = await checkTalkAllowed(exec, targetId)
+        if (talkCheck.ok === false) {
+          return jsonText({ ok: false, error: talkCheck.error })
+        }
         // P3 消息长度上限：防大 payload 撑爆目标会话上下文/落盘（超出截断并标记）
         const MAX_BODY = 200000
         if (body.length > MAX_BODY) body = body.slice(0, MAX_BODY) + '\n\n...(truncated: 原 ' + String(body.length) + ' 字符超上限)'
@@ -914,15 +1134,21 @@ export default {
         // misread as local user input otherwise.
         const replyHint = from === undefined
           ? ''
-          : '\n\n（这是一条跨会话协作消息。若它要求回复，处理后请用 session_send 把结论发回给发送方会话 ' + from + '，而不是只写在本地对话里。）'
+          : '\n\n（这是一条跨会话协作消息。若它要求回复，处理后请用 forge_mailbridge_send 把结论发回给发送方会话 ' + from + '，而不是只写在本地对话里。）'
         const wrapped = prefix + '\n\n' + cleanBody + replyHint + '\n\n[cross-session message end]'
         const message = {
           id: makeId('m'),
           role: 'user',
           content: [{ type: 'text', text: wrapped }],
-          source: from === undefined
-            ? { kind: 'user', rpcId: makeId('rpc') }
-            : { kind: 'user', rpcId: makeId('rpc'), senderSessionId: from },
+        // Official producer-owned source shape. `kind` MUST NOT be 'user':
+        // that is the single switch the client uses to decide between a human
+        // bubble and an external-delivery card, and `rpcId` belongs to the
+        // browser's optimistic-echo dedup — a third party filling it in
+        // interferes with prompt settlement. `form: 'relay'` plus a non-empty
+        // `senderSessionId` is what renders "来自会话 X".
+        source: from === undefined
+          ? { kind: 'mailbridge' }
+          : { kind: 'mailbridge', form: 'relay', senderSessionId: from },
         }
         const target = agents.get(targetId)
         if (target !== undefined) {
@@ -932,49 +1158,35 @@ export default {
             return jsonText({ ok: true, delivered: 'live', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName })
           } catch (error) { /* fall through to the durable queue */ }
         }
-        if (args.wake === true && typeof agents.resume === 'function') {
-          const wakeCheck = checkWakeAllowed(exec, targetId)
-          if (wakeCheck.ok === false) return jsonText({ ok: false, error: wakeCheck.error })
+        if (args.wake === true) {
           try {
-            // Reuse the session's last logged route so the waking turn bills
-            // the same provider/model instead of the global default.
-            let agentOptions
-            try {
-              const inspection = await sessionPersistence.inspect(targetId)
-              const events = Array.isArray(inspection.events) ? inspection.events : []
-              for (let i = events.length - 1; i >= 0; i -= 1) {
-                const event = events[i]
-                const header = event?.data?.header
-                const cfg = header?.config
-                if (event !== null && typeof event === 'object' && event.type === 'request/header' && cfg !== null && typeof cfg === 'object' && typeof cfg.provider === 'string' && typeof cfg.model === 'string') {
-                  agentOptions = { provider: cfg.provider, model: cfg.model }
-                  break
-                }
-              }
-            } catch (error) { /* resume with defaults */ }
-            await agents.resume({ resumeSessionId: targetId, ...(agentOptions !== undefined ? { agentOptions } : {}) })
-            const resumed = agents.get(targetId)
-            if (resumed !== undefined) {
-              let delivered = false
-              try {
-                if (typeof resumed.status === 'string' && resumed.status === 'running') resumed.steer(message)
-                else resumed.followup(message)
-                delivered = true
-              } catch (error) {
-                // One retry through the ordinary followup path (steer may race
-                // the waking turn); a second failure falls through to the
-                // durable queue below instead of losing the message.
-                try {
-                  resumed.followup(message)
-                  delivered = true
-                } catch (retryError) { /* fall through to the durable queue */ }
-              }
-              if (delivered) {
-                return jsonText({ ok: true, delivered: 'woken', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName, agentOptions: agentOptions ?? null })
-              }
+            // Official cold-delivery path, modelled on the schedule plugin's
+            // drive() (packages/schedule/schedule/src/runtime.ts):
+            //   resolveAgent()  resolve or resume, deduplicating concurrent resumes
+            //   steer/followup  wake the driver (followup makes the item the sole
+            //                   ordinary message of its own turn)
+            //   sessions.flush  durability barrier — without it a crash after the
+            //                   inbox append can lose the message
+            // The manual "reuse the last logged route" dance is gone: a resumed
+            // agent restores its own route from the persisted log.
+            if (sessionController !== undefined && typeof sessionController.resolveAgent === 'function') {
+              try { await sessionController.resolveAgent(targetId) } catch (error) { /* fall back to a live lookup */ }
             }
-            // resume succeeded but the agent did not register: fall through to
-            // the durable queue below instead of losing the message (P0-2 fix —
+            const target = agents.get(targetId)
+            if (target !== undefined) {
+              if (typeof target.status === 'string' && target.status === 'running') target.steer(message)
+              else target.followup(message)
+              let flushed = true
+              try {
+                if (sessions !== undefined && typeof sessions.flush === 'function') {
+                  const ack = await sessions.flush(target.session)
+                  flushed = ack !== false
+                }
+              } catch (error) { flushed = false }
+              return jsonText({ ok: true, delivered: 'woken', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName, flushed })
+            }
+            // resolveAgent succeeded but the agent did not register: fall through
+            // to the durable queue below instead of losing the message (P0-2 fix —
             // every path must end in live delivery OR the persistent queue).
           } catch (error) {
             return jsonText({ ok: false, error: 'wake failed: ' + errText(error), targetSessionId: targetId })
@@ -983,7 +1195,7 @@ export default {
         try {
           const ids = await listSessionIds()
           const known = ids.some((entry) => entry.id === targetId)
-          if (!known) return jsonText({ ok: false, error: 'unknown session id "' + targetId + '"; use session_list to see available sessions' })
+          if (!known) return jsonText({ ok: false, error: 'unknown session id "' + targetId + '"; use forge_mailbridge_list to see available sessions' })
         } catch (error) { /* best-effort existence check */ }
         const mailbox = await requireUnit()
         await enqueue(() => mailbox.putRecord('msg', message.id, {
@@ -997,7 +1209,7 @@ export default {
         return jsonText({ ok: true, delivered: 'queued', targetSessionId: targetId, messageId: message.id, from: from ?? null, fromName })
       })
 
-    registerTool(ctx, 'mailbox_check',
+    registerTool(ctx, 'forge_mailbridge_check',
       '检查并消费排给本会话的跨会话消息（本会话不在线期间发来的消息）。返回消息并从持久队列中移除；用户问其他会话是否发过什么时调用。完整工作流见 `cross-session-mailbox` 技能。',
       {},
       async (args, exec) => {
@@ -1019,7 +1231,10 @@ export default {
         return jsonText({ ok: true, sessionId: me, count: messages.length, messages })
       })
 
-    ctx.on('agent/session-start', (payload) => {
+    // 0.2.0-rc.2: agent/session-start → the asynchronous, serial agent/created.
+    // Fires before the agent's first model request, which is strictly better for
+    // delivering offline mail than the old fire-and-forget event.
+    ctx.on('agent/created', (payload) => {
       const agent = payload !== undefined && payload.agent !== undefined ? payload.agent : undefined
       if (agent === undefined || typeof agent.id !== 'string') return
       requireUnit().then((mailbox) => enqueue(async () => {
@@ -1036,9 +1251,10 @@ export default {
             id: typeof record.id === 'string' ? record.id : makeId('m'),
             role: 'user',
             content: [{ type: 'text', text: typeof record.text === 'string' ? record.text : '' }],
+            // Same official producer-owned source shape as the live path.
             source: typeof record.from === 'string'
-              ? { kind: 'user', rpcId: makeId('rpc'), senderSessionId: record.from }
-              : { kind: 'user', rpcId: makeId('rpc') },
+              ? { kind: 'mailbridge', form: 'relay', senderSessionId: record.from }
+              : { kind: 'mailbridge' },
           }
           try { agent.followup(message) } catch (error) { continue }
           await mailbox.deleteRecord('msg', item.key)

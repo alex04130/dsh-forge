@@ -14,18 +14,34 @@ const OUT = outIdx !== -1 && typeof process.argv[outIdx + 1] === 'string'
   ? process.argv[outIdx + 1]
   : join(ROOT, 'docs/compat-manifest.json')
 
-// 我们插件 inject/调用过的上游服务 id（白名单，防止把对象方法误当服务）
+// 上游 DSH 服务 id 白名单（防止把对象方法误当服务）。
+// 2026-10-02 重建：基线换成部署代码后，按源码实际 inject / ctx.get / ctx.<name> 提取结果校准。
+// 刻意**排除**的几类：
+//   - forge 自建服务（我们自己的插件 provide 的，不是上游面，不该对着 DSH 断言）→ 见 INTERNAL
+//   - Cordis 框架面而非 DSH 服务：loader / logger / effect / on / provide / get
+//   - ctx 上的 timer 混入：timeout / setInterval / setInterval
 const SVC = new Set([
-  'sessionPersistence', 'sessionmgmt', 'sessions', 'agents', 'subagents',
-  'llm', 'tools', 'web', 'sessionQuery', 'loader', 'skills', 'systemPrompt',
-  'attachments', 'storage', 'dynamicCordisRunner', 'webServer',
+  // host 平面
+  'agents', 'agentPresets', 'agentDefaultModel', 'approval', 'attachments', 'authorization',
+  'credentials', 'cordisInspect', 'dynamicCordisRunner', 'fs', 'llm', 'sandboxPolicy',
+  'sessionController', 'sessionPersistence', 'sessionQuery', 'sessions', 'settings', 'shell',
+  'skills', 'storage', 'subagents', 'systemPrompt', 'timer', 'tools', 'web', 'webServer',
+  'workspaceRegistry',
+  // client 平面
+  'locale', 'slots', 'workspaces',
 ])
 
-// 手工基线（自编辑 P2-1 初始清单补充；来源不在仓库镜像内，升级后按冒烟清单人工核）
-const MANUAL = [
-  { id: 'web', methods: ['searchProviders', 'searchProviderId'], sources: ['runtime injector: web-search-kimi-live / web-search-provider-selector（dev-plugins，未入仓库）'], note: '初始清单手工基线（P2-1）' },
-  { id: 'sessionmgmt', methods: ['deleteSessions', 'masterIdFromSessionId'], sources: ['dynamic/dynplugins/sesmgr.host.js（注入服务经 svc. 别名调用，静态提取无法归名）', 'bundle/plugins/mailbridge.mjs（deleteSessions 守卫语义）'], note: '初始清单手工基线（P2-1）' },
-]
+// forge 自建服务：只做"提供方是否还在"的自检，不对上游断言。
+// 2026-10-02：`forgeShell` 移出 —— 它的提供方是动态客户端半部 forge-ui.client.js，
+// 该文件在 UI 大改中整批删除（面板全部下线，UI 迁到静态包 @local/dsh-forge-ui）。
+// 留着它会让 L0「自建服务有提供方」永远红着，而红的原因恰恰是正确的。
+const INTERNAL = ['sessionmgmt', 'skillRegistry', 'featsw', 'teamDeleteApi']
+
+// 手工基线（来源不在扫描范围内、静态提取抓不到的；升级后按冒烟清单人工核）。
+// 2026-10-02 清空：旧条目 web.searchProviderId 在 0.2.0-rc.2 已不存在（ctx.web 只剩
+// registerSearchProvider / registerFetchProvider / search / fetch，提供方由 searchProvider
+// 配置解析），来源 dev-plugins 也从未入仓。
+const MANUAL = []
 
 async function files(dir, suffix) {
   try {
@@ -68,16 +84,43 @@ for (const [file, code] of scan) {
   }
 }
 
+// 正则产物的已知噪声：按服务分别剔除同名但不同物的方法（每条注理由）。
+// 这是本清单可信度的已知上限——它是 canary，不是 API 契约证明。
+const NOISE = {
+  // Node 的 node:fs（forge-ui.host 的 require("fs") 字符串、各处 readFileSync…），
+  // DSH 的 fs 服务没有 Sync 家族。
+  fs: ['cpSync', 'mkdirSync', 'readFileSync', 'readdirSync', 'renameSync', 'rmSync', 'statSync', 'symlinkSync', 'writeFileSync', 'appendFileSync', 'existsSync'],
+  // `skills` 在代码里常是个数组/Map 变量。
+  skills: ['filter', 'find', 'map', 'push', 'some', 'forEach', 'reduce', 'slice', 'includes', 'join'],
+  // `tools` 常是 Map/Object。
+  tools: ['entries', 'keys', 'values', 'has', 'size'],
+  // `shell` 这个局部名常绑定为 ctx.get('forgeShell') —— 那是自建服务，不是 DSH 的 shell。
+  shell: ['registerFeature'],
+  // `sessions` 的 client 面（uiWorkspace/workspaces 服务）与 host 面同名方法易混；
+  // 保守保留，仅剔除明显是 Array/Map 的。
+  sessions: ['map', 'filter', 'find', 'push'],
+}
+
 const services = [...bySvc.entries()]
-  .map(([id, e]) => ({ id, methods: [...e.methods].sort(), sources: [...e.sources].sort() }))
+  .map(([id, e]) => {
+    const noise = NOISE[id] || []
+    return {
+      id,
+      methods: [...e.methods].filter((m) => !noise.includes(m)).sort(),
+      dropped: [...e.methods].filter((m) => noise.includes(m)).sort(),
+      sources: [...e.sources].sort(),
+    }
+  })
   .sort((a, b) => (SVC.has(a.id) === SVC.has(b.id) ? a.id.localeCompare(b.id) : 0))
 
 const manifest = {
   $schema: './compat-manifest.schema.md',
   version: 1,
-  updated: '2026-09-01',
+  updated: '2026-10-02',
+  dshBaseline: '0.2.0-rc.2',
   generatedBy: 'scripts/gen-compat-manifest.mjs',
   services,
+  internal: INTERNAL,
   manual: MANUAL,
 }
 

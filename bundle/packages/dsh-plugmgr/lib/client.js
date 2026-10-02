@@ -66,22 +66,20 @@ window.__ModuleLoader__.load({
     ].join('\n')
 
     function PlugIcon() {
-      // forge 图标套件定稿（ui-redraw SPEC）：电插销=双插脚 + 插体 + accent 电源点（插入取电）；15px 固定盒双色
+      // lucide wrench (ISC): intentionally a wrench — "extensions = tools".
       return React.createElement('svg', {
-        width: 15,
-        height: 15,
+        width: 14,
+        height: 14,
         viewBox: '0 0 24 24',
         fill: 'none',
+        'aria-hidden': 'true',
+      }, React.createElement('path', {
+        d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z',
         stroke: 'currentColor',
         strokeWidth: 2,
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
-        'aria-hidden': 'true',
-        style: { flex: 'none' },
-      },
-        React.createElement('path', { d: 'M9 3 v4.5 M15 3 v4.5' }),
-        React.createElement('path', { d: 'M7 7.5 h10 v4.5 a5 5 0 0 1 -10 0 Z' }),
-        React.createElement('circle', { cx: 12, cy: 19.4, r: 1.7, fill: 'var(--dsw-alias-accent, #4f7cff)', stroke: 'none' }))
+      }))
     }
 
     function CloseIcon() {
@@ -352,7 +350,7 @@ window.__ModuleLoader__.load({
               hostEntries === null ? React.createElement('div', { className: 'plugmgr-hint' }, '读取 loader 清单中…') : (localFiltered.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, q !== '' ? '无匹配。' : '没有本地宿主插件。') : hostLocalCards)) : null,
             visible.injected === true ? React.createElement('div', { key: 'sec-injected' },
               React.createElement(SectionTitle, { anchor: 'plugmgr-sec-injected', title: '运行时注入', count: injectedFiltered.length + ' / ' + hostGroups.injected.length }),
-              React.createElement('div', { className: 'plugmgr-hint' }, '经 dev_inject_plugin 注入，记录在 ~/.dsh/injector/registry.json，重启后自动恢复。'),
+              React.createElement('div', { className: 'plugmgr-hint' }, '经 forge_dev_inject_plugin 注入，记录在 ~/.dsh/injector/registry.json，重启后自动恢复。'),
               injectedFiltered.length === 0 ? React.createElement('div', { className: 'plugmgr-hint' }, q !== '' ? '无匹配。' : '没有运行时注入的插件。') : injectedCards) : null,
             visible.official === true ? React.createElement('div', { key: 'sec-official' },
               React.createElement(SectionTitle, { anchor: 'plugmgr-sec-official', title: '官方插件', count: officialFiltered.length + ' / ' + hostGroups.official.length }),

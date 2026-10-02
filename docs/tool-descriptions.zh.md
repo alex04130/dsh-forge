@@ -12,7 +12,7 @@
 - 代码标识符（`childId`、`pluginId`、`agent-preset/selected`、`byModel`）
 - 技术缩写与专名（LLM、API、id、token、ESM、Host、Client、GUI、web profile）
 - 设置项名（`llm-pi-ai`）、技能名（`cross-session-mailbox` 等）
-- 已知例外：`dev_stop_dyn_plugin` 的 description 整体保留英文（应急停止工具，面向救援场景；其参数说明仍为中文）。
+- 已知例外：`forge_dev_stop_dyn_plugin` 的 description 整体保留英文（应急停止工具，面向救援场景；其参数说明仍为中文）。
 
 ## 术语对照表
 

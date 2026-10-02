@@ -1,6 +1,8 @@
 // description: 子代理模型路由策略：子代理默认继承父的 live 路由（绝不静默升级），显式指定才用别的；plan 计费重写。
 import { errText, jsonText } from './lib/forge-common.mjs'
 import { registerTool } from './lib/forge-tools.mjs'
+// P2-2 单一事实源：DEFAULT_SERIES 从 subagent-policy 导入（原本地副本删除——两处曾逐字重复，防漂移）
+import { DEFAULT_SERIES } from './lib/subagent-policy.mjs'
 
 // dsh-modelroute: subagent model-inheritance policy + model-series taxonomy +
 // plan-aware provider routing.
@@ -23,13 +25,7 @@ import { registerTool } from './lib/forge-tools.mjs'
 //
 // Taxonomy is config-extensible. An id matching no series is "unknown"; the
 // policy then never dispatches a different model than the parent's main model.
-
-const DEFAULT_SERIES = {
-  deepseek: { match: /^deepseek/i, tiers: ['flash', 'lite', 'pro', 'max'] },
-  claude: { match: /^(claude|anthropic)/i, tiers: ['haiku', 'sonnet', 'opus'] },
-  chatgpt: { match: /^(gpt|chatgpt|o1|o3|openai)/i, tiers: ['mini', 'lite', 'pro', 'max'] },
-  qwen: { match: /^qwen/i, tiers: ['flash', 'lite', 'plus', 'max'] },
-}
+// （DEFAULT_SERIES 已 import 自 subagent-policy——单一事实源）
 
 export default {
   inject: ['agents', 'tools'],
@@ -172,7 +168,7 @@ export default {
       }
     })
 
-    registerTool(ctx, 'model_taxonomy',
+    registerTool(ctx, 'forge_model_taxonomy',
       '显示模型系列分类（系列、档位关键词）并对一个模型 id 归类。',
       { model: { type: 'string', description: '要归入某系列和档位的模型 id。' } },
       async (args) => {
@@ -188,7 +184,7 @@ export default {
         return jsonText(out)
       })
 
-    registerTool(ctx, 'model_route_status',
+    registerTool(ctx, 'forge_model_route_status',
       '显示当前代理路由；对子代理，显示它被钳制到的父级在线路由。',
       {},
       async (_args, exec) => {

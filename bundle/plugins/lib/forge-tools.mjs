@@ -24,7 +24,7 @@ export function registerTool(ctx, name, description, parameters, execute, timeou
     async execute(args, exec) {
       // featsw gate（FR-9）：gate-off 即拒，不进审批弹窗
       if (isGateOpen !== null && isGateOpen(name) === false) {
-        return jsonText({ ok: false, error: 'feature_disabled: ' + name + ' (gate off via featsw; 可通过 feature_request 申请开启)', feature: name, featureDisabled: true })
+        return jsonText({ ok: false, error: 'feature_disabled: ' + name + ' (gate off via featsw; 可通过 forge_feature_request 申请开启)', feature: name, featureDisabled: true })
       }
       try {
         return await execute(args, exec)

@@ -2,6 +2,8 @@
 import { collectModelEscalations, collectPresetEscalations, collectSandboxEscalations, installChildPolicy, validateEffort } from './lib/subagent-policy.mjs'
 import { errText, jsonText } from './lib/forge-common.mjs'
 import { registerTool } from './lib/forge-tools.mjs'
+import { openTeamsFile } from './lib/teams-file.mjs'
+import { isForgeTeamPreset } from './lib/projects.mjs'
 
 let idCounter = 0
 function makeId(prefix) {
@@ -12,7 +14,7 @@ function callerId(exec, agents) {
   // Identity for team AUTHORIZATION decisions must come from the tool's own
   // execution context only. The initiator fallback previously misattributed
   // members as the captain in some call paths (a member was refused as
-  // "you are the captain", and team_delete authorization could be spoofed);
+  // "you are the captain", and forge_team_delete authorization could be spoofed);
   // without exec.agent we fail closed instead of guessing.
   if (exec !== undefined && exec.agent !== undefined && typeof exec.agent.id === 'string') return exec.agent.id
   return undefined
@@ -28,10 +30,9 @@ const TASK_TRANSITIONS = {
 }
 
 export default {
-  inject: ['tools', 'agents', 'storage', 'subagents', 'llm', 'sessionmgmt'],
+  inject: ['tools', 'agents', 'subagents', 'llm', 'sessionmgmt'],
   apply(ctx) {
     const agents = ctx.agents
-    const storage = ctx.storage
     const subagents = ctx.subagents
     const skills = ctx.get('skills')
     const presets = ctx.get('agentPresets')
@@ -40,7 +41,7 @@ export default {
     const sandboxPolicy = ctx.get('sandboxPolicy')
     const timer = ctx.get('timer')
 
-    // team_wait 挂起注册表：成员调用 team_wait 后回合挂起，直到目标成员的
+    // forge_team_wait 挂起注册表：成员调用 forge_team_wait 后回合挂起，直到目标成员的
     // 消息到达、目标任务完成、队长发消息（消息到达即唤醒）、或超时。
     const waiters = []
     function wakeWaiters(predicate, payload) {
@@ -58,17 +59,9 @@ export default {
     // any escalation (model tier/series, preset capability face) asks the user.
     const policy = installChildPolicy(ctx, presets)
 
-    let teamsUnit = undefined
-    let openError = undefined
-    const opening = (async () => {
-      const backend = storage.backend.get('json')
-      if (backend === undefined || backend.kv === undefined) throw new Error('no "json" storage backend with a kv facet is mounted')
-      teamsUnit = await backend.kv.open({ name: 'agent_teams', version: 0, tables: ['team', 'archive', 'mail', 'template'], hasGlobal: false })
-    })()
-    opening.catch((error) => { openError = errText(error) })
+    // T8b：组织真值走 projects.json 文件面。禁止 kv.open('agent_teams')（句柄独占 / unit already open）。
+    const teamsUnit = openTeamsFile()
     async function requireUnit() {
-      await opening
-      if (teamsUnit === undefined) throw new Error('team storage failed to open: ' + (openError ?? 'unknown error'))
       return teamsUnit
     }
 
@@ -80,7 +73,7 @@ export default {
     }
 
     ctx.effect(() => () => {
-      try { if (teamsUnit !== undefined) teamsUnit.close() } catch (error) { /* best-effort */ }
+      try { teamsUnit.close() } catch (error) { /* best-effort */ }
     })
 
     function cleanId(value) {
@@ -109,7 +102,7 @@ export default {
     }
 
     // Shared member-adding path: validation, escalation approval, spawn, and
-    // registration. Used by both team_add_member and team_create(members: [...]).
+    // registration. Used by both team_add_member and forge_team_create(members: [...]).
     // Returns { ok, member?, error?, cancelled?, escalations?, mode? }.
     async function addMember(team, spec, agent, exec, toolName, persist) {
       const memberId = cleanId(spec.memberId)
@@ -164,7 +157,7 @@ export default {
         }
       }
 
-      const persona = 'You are member "' + memberId + '" (' + role + ') of agent team "' + team.name + '" led by captain session ' + team.captain + '. Team goal: ' + String(team.goal ?? '(none)') + '.\n\nWork protocol:\n- Claim and work only on tasks assigned to you (team_claim_task / team_update_task).\n- When a task is done, call team_update_task with status "completed" and put your result in output.\n- Talk to the captain or other members with team_send_message (their ids are in team_status).\n- Check team_status for your inbox and task state before acting.\n- Load the agent-teamwork skill for the full team protocol.\n\nYour mission from the captain:\n' + String(spec.prompt ?? '')
+      const persona = 'You are member "' + memberId + '" (' + role + ') of agent team "' + team.name + '" led by captain session ' + team.captain + '. Team goal: ' + String(team.goal ?? '(none)') + '.\n\nWork protocol:\n- Claim and work only on tasks assigned to you (forge_team_claim_task / forge_team_update_task).\n- When a task is done, call forge_team_update_task with status "completed" and put your result in output.\n- Talk to the captain or other members with forge_team_send_message (their ids are in forge_team_status).\n- Check forge_team_status for your inbox and task state before acting.\n- Load the agent-teamwork skill for the full team protocol.\n\nYour mission from the captain:\n' + String(spec.prompt ?? '')
       const agentOptions = {}
       if (explicitProvider !== undefined) agentOptions.provider = explicitProvider
       if (explicitModel !== undefined) agentOptions.model = explicitModel
@@ -180,9 +173,20 @@ export default {
       // ── existingSessionId 分支：成员=已有 peer 会话（不 spawn）——"把现有项目会话拉成 team" 场景 ──
       // 用途：现有协作是 peer 会话（自编辑/前端/审计/grok/relay），拉进 team 共享任务板/消息墙，不新起会话。
       const existingSid = typeof spec.existingSessionId === 'string' && spec.existingSessionId.length > 0 ? spec.existingSessionId : undefined
+      if (existingSid === undefined) {
+        staged.cancel?.()
+        return { ok: false, memberId, error: '队员必须已有会话（existingSessionId）；禁止 spawn' }
+      }
+      const face = typeof spec.preset === 'string' && spec.preset.trim() !== ''
+        ? spec.preset.trim()
+        : (typeof spec.mode === 'string' && isForgeTeamPreset(spec.mode.trim()) ? spec.mode.trim() : 'forge-team')
+      if (!isForgeTeamPreset(face)) {
+        staged.cancel?.()
+        return { ok: false, memberId, error: '入队只能 forge-team / forge-team-creative / forge-team-distill' }
+      }
       if (existingSid !== undefined) {
         staged.cancel?.()
-        team.members.push({ id: memberId, sessionId: existingSid, role, createdAt: Date.now(), existing: true })
+        team.members.push({ id: memberId, sessionId: existingSid, role, createdAt: Date.now(), existing: true, preset: isForgeTeamPreset(face) ? face : 'forge-team' })
         if (persist !== false) await teamsUnit.putRecord('team', team.captain, team)
         return { ok: true, member: { id: memberId, sessionId: existingSid, role, existing: true } }
       }
@@ -203,16 +207,16 @@ export default {
         throw error
       }
       team.members.push({ id: memberId, sessionId: started.childId, role, createdAt: Date.now() })
-      // P1-1：addMember 不再实例内写库——由调用方（team_add_member/team_create）统一 putRecord，
-      // team_create 只在成员全部处理完（含失败隔离）后落库，实现"部分失败不残留中间态"。
+      // P1-1：addMember 不再实例内写库——由调用方（team_add_member/forge_team_create）统一 putRecord，
+      // forge_team_create 只在成员全部处理完（含失败隔离）后落库，实现"部分失败不残留中间态"。
       if (persist !== false) await teamsUnit.putRecord('team', team.captain, team)
       return { ok: true, member: { id: memberId, sessionId: started.childId, role }, ...(modeId !== undefined ? { mode: modeId } : {}), ...(escalations.length > 0 ? { approvedEscalations: escalations } : {}) }
     }
 
 
     const OPS = {}
-    OPS['team_create'] = { name: 'team_create',
-      desc: '一键建队并派发成员与任务。用 `members` 数组一次加成员（memberId/role/prompt + 可选 provider/model/reasoningEffort/mode/sandbox），`tasks` 数组一次建任务（title/assignee/dependencies；依赖须先出现）。提权（更高模型档位/跨系列/能力面新增）自动审批，失败逐项隔离。先准备角色清单与依赖顺序再建；完整工作流见 agent-teamwork 技能。',
+    OPS['forge_team_create'] = { name: 'forge_team_create',
+      desc: '建队：只拉已有主会话（每名队员必须 existingSessionId），禁止 spawn。人点控制台免批；模型调用要批。队员 preset 只能 forge-team / forge-team-creative / forge-team-distill。',
       schema: {
         name: { type: 'string', required: true, description: '简短团队名，如 "migration-squad"。' },
         goal: { type: 'string', description: '一行团队目标，送达各成员。' },
@@ -254,7 +258,7 @@ export default {
         const captain = callerId(exec, agents)
         if (captain === undefined) return jsonText({ ok: false, error: 'cannot determine the calling session id' })
         const agent = exec !== undefined ? exec.agent : undefined
-        if (agent === undefined) return jsonText({ ok: false, error: 'no calling agent; team_create must run inside a session' })
+        if (agent === undefined) return jsonText({ ok: false, error: 'no calling agent; forge_team_create must run inside a session' })
         const name = String(args.name ?? '').trim()
         if (name.length === 0 || name.length > 64) return jsonText({ ok: false, error: 'team name must be 1-64 characters' })
         const specs = Array.isArray(args.members) ? args.members.filter((m) => m !== null && typeof m === 'object') : []
@@ -263,7 +267,7 @@ export default {
         const teamsUnit = await requireUnit()
         const created = await enqueue(async () => {
           const existing = await getTeam(captain)
-          if (existing !== undefined) throw new Error('you already lead team "' + String(existing.name ?? '') + '"; use team_delete first')
+          if (existing !== undefined) throw new Error('you already lead team "' + String(existing.name ?? '') + '"; use forge_team_delete first')
           const record = {
             teamId: makeId('team'),
             name,
@@ -280,7 +284,7 @@ export default {
             try {
               // P1-1：persist=false——成员 spawn 期间不写库，成员全部处理完后统一落库；
               // 部分成员失败注入 memberResults（隔离语义保留），成功成员留在 record，最终一起写入。
-              const result = await addMember(record, spec, agent, exec, 'team_create', false)
+              const result = await addMember(record, spec, agent, exec, 'forge_team_create', false)
               memberResults.push(result)
             } catch (error) {
               memberResults.push({ ok: false, memberId: String(spec.memberId ?? ''), error: errText(error) })
@@ -330,35 +334,7 @@ export default {
       },
     }
 
-    OPS['team_add_member'] = { name: 'team_add_member',
-      desc: '给现有团队补一个成员：派发持久子代理会话。成员 id 是 `team_send_message` 的收件地址；提权（更高模型档位/跨系列/能力面新增）自动审批。完整工作流见 agent-teamwork 技能。',
-      schema: {
-        memberId: { type: 'string', required: true, description: '简短成员 id/名字，如 "researcher" 或 "alice"。' },
-        role: { type: 'string', required: true, description: '角色描述，如 "frontend reviewer"。' },
-        prompt: { type: 'string', description: '成员的初始任务（existingSessionId 时省略——已有会话自有上下文）。' },
-        existingSessionId: { type: 'string', description: '可选：已有 peer 会话 id——拉现有会话进 team（不 spawn），共享任务板/消息墙。' },
-        provider: { type: 'string', description: '可选的成员供应商路由；省略则继承队长的供应商。' },
-        model: { type: 'string', description: '可选的成员模型 id；省略则继承队长当前模型。' },
-        reasoningEffort: { type: 'string', description: '可选的成员思考强度；省略则继承队长当前强度。' },
-        mode: { type: 'string', description: '可选的成员模式 id（如 "router-standard"、"cordis"）；省略则继承队长组合。' },
-        sandbox: { type: 'string', description: '可选的成员沙箱模式（"read-only" | "workspace-write" | "danger-full-access"）；比队长更宽的写权限会请求审批。' },
-      },
-      handler: async (args, exec) => {
-        const captain = callerId(exec, agents)
-        if (captain === undefined) return jsonText({ ok: false, error: 'cannot determine the calling session id' })
-        const agent = exec !== undefined ? exec.agent : undefined
-        if (agent === undefined) return jsonText({ ok: false, error: 'no calling agent; team_add_member must run inside a session' })
-        const teamsUnit = await requireUnit()
-        return await enqueue(async () => {
-          const team = await getTeam(captain)
-          if (team === undefined) return jsonText({ ok: false, error: 'no team found; call team_create first' })
-          const result = await addMember(team, args, agent, exec, 'team_add_member')
-          return jsonText(result)
-        })
-      },
-    }
-
-    OPS['team_add_members'] = { name: 'team_add_members',
+    OPS['forge_team_add_members'] = { name: 'forge_team_add_members',
       desc: '批量补成员：一次传多个成员数组，逐项独立审批与失败隔离（某个失败只影响该项）。与 team_add_member 同策略。完整工作流见 agent-teamwork 技能。',
       schema: {
         members: {
@@ -386,17 +362,17 @@ export default {
         const captain = callerId(exec, agents)
         if (captain === undefined) return jsonText({ ok: false, error: 'cannot determine the calling session id' })
         const agent = exec !== undefined ? exec.agent : undefined
-        if (agent === undefined) return jsonText({ ok: false, error: 'no calling agent; team_add_members must run inside a session' })
+        if (agent === undefined) return jsonText({ ok: false, error: 'no calling agent; forge_team_add_members must run inside a session' })
         const specs = Array.isArray(args.members) ? args.members.filter((m) => m !== null && typeof m === 'object') : []
         if (specs.length === 0) return jsonText({ ok: false, error: 'members must be a non-empty array' })
         const teamsUnit = await requireUnit()
         return await enqueue(async () => {
           const team = await getTeam(captain)
-          if (team === undefined) return jsonText({ ok: false, error: 'no team found; call team_create first' })
+          if (team === undefined) return jsonText({ ok: false, error: 'no team found; call forge_team_create first' })
           const results = []
           for (const spec of specs) {
             try {
-              const result = await addMember(team, spec, agent, exec, 'team_add_members')
+              const result = await addMember(team, spec, agent, exec, 'forge_team_add_members')
               results.push(result)
             } catch (error) {
               results.push({ ok: false, memberId: String(spec.memberId ?? ''), error: errText(error) })
@@ -407,7 +383,7 @@ export default {
       },
     }
 
-    OPS['team_create_task'] = { name: 'team_create_task',
+    OPS['forge_team_create_task'] = { name: 'forge_team_create_task',
       desc: '把目标拆成一个任务：title 必填、可选 assignee（成员 id，省略进认领池）、dependencies（必须先完成的任务 id）。依赖须已验证存在。完整工作流见 agent-teamwork 技能。',
       schema: {
         title: { type: 'string', required: true, description: '简短任务标题。' },
@@ -423,7 +399,7 @@ export default {
         const teamsUnit = await requireUnit()
         return await enqueue(async () => {
           const team = await getTeam(captain)
-          if (team === undefined) return jsonText({ ok: false, error: 'no team found; call team_create first' })
+          if (team === undefined) return jsonText({ ok: false, error: 'no team found; call forge_team_create first' })
           const taskId = 't' + String(team.nextTask)
           const deps = Array.isArray(args.dependencies) ? args.dependencies.map((d) => String(d)).filter((d) => d.length > 0) : []
           const assignee = String(args.assignee ?? '').trim()
@@ -449,7 +425,7 @@ export default {
       },
     }
 
-    OPS['team_claim_task'] = { name: 'team_claim_task',
+    OPS['forge_team_claim_task'] = { name: 'forge_team_claim_task',
       desc: '为成员认领一个待处理任务（或取消认领退回待处理）。所有依赖必须已完成。队长可为任何人认领；成员只能为自己或未指派任务认领。完整工作流见 agent-teamwork 技能。',
       schema: {
         taskId: { type: 'string', required: true, description: '任务 id，如 "t1"。' },
@@ -501,7 +477,7 @@ export default {
       },
     }
 
-    OPS['team_update_task'] = { name: 'team_update_task',
+    OPS['forge_team_update_task'] = { name: 'forge_team_update_task',
       desc: '推进任务状态（claimed → in_progress → completed | failed | cancelled）并可选记录其输出。成员更新自己的任务；队长可更新任何任务。完整工作流见 agent-teamwork 技能。',
       schema: {
         taskId: { type: 'string', required: true, description: '任务 id，如 "t1"。' },
@@ -547,8 +523,8 @@ export default {
       },
     }
 
-    OPS['team_wait'] = { name: 'team_wait',
-      desc: '暂停当前回合，等待另一名队员的消息或某个任务的完成（任一满足即唤醒）。等待不消耗额外步骤，超时（默认 600 秒，上限 3600 秒）后返回 timeout，可再等；队长随时可发消息拆掉等待，不会死锁。用它替代轮询 team_status，别做重复劳动。',
+    OPS['forge_team_wait'] = { name: 'forge_team_wait',
+      desc: '暂停当前回合，等待另一名队员的消息或某个任务的完成（任一满足即唤醒）。等待不消耗额外步骤，超时（默认 600 秒，上限 3600 秒）后返回 timeout，可再等；队长随时可发消息拆掉等待，不会死锁。用它替代轮询 forge_team_status，别做重复劳动。',
       schema: {
         memberId: { type: 'string', description: '要等待的成员 id；省略则等待任意消息。' },
         taskId: { type: 'string', description: '要等待的任务 id（如 "t2"）；该任务 completed 时唤醒。' },
@@ -561,7 +537,7 @@ export default {
         const taskId = String(args.taskId ?? '').trim()
         if (memberId.length === 0 && taskId.length === 0) return jsonText({ ok: false, error: 'memberId or taskId is required' })
         const team = await getTeam(me)
-        if (team === undefined) return jsonText({ ok: false, error: 'you are not part of any team; call team_create first' })
+        if (team === undefined) return jsonText({ ok: false, error: 'you are not part of any team; call forge_team_create first' })
         if (memberId.length > 0 && !memberOf(team, memberId)) return jsonText({ ok: false, error: 'member "' + memberId + '" is not a team member' })
         if (taskId.length > 0) {
           const target = team.tasks.find((t) => t !== null && typeof t === 'object' && t.id === taskId)
@@ -570,7 +546,7 @@ export default {
         }
         const timeoutSec = typeof args.timeoutSeconds === 'number' && args.timeoutSeconds > 0 ? Math.min(Math.floor(args.timeoutSeconds), 3600) : 600
         if (timer === undefined || typeof timer.timeout !== 'function') {
-          return jsonText({ ok: false, error: 'timer service unavailable; waiting is disabled — poll team_status instead' })
+          return jsonText({ ok: false, error: 'timer service unavailable; waiting is disabled — poll forge_team_status instead' })
         }
         return await new Promise((resolve) => {
           let settled = false
@@ -583,7 +559,7 @@ export default {
             const idx = waiters.indexOf(entry)
             if (idx >= 0) waiters.splice(idx, 1)
             if (timeoutDispose !== null) { try { timeoutDispose() } catch (error) { /* best-effort */ } }
-            // P1-1：abort 监听器 finish 后必须摘掉，否则每次 team_wait 泄漏一条
+            // P1-1：abort 监听器 finish 后必须摘掉，否则每次 forge_team_wait 泄漏一条
             if (abortListener !== null && signal !== undefined && typeof signal.removeEventListener === 'function') {
               try { signal.removeEventListener('abort', abortListener) } catch (error) { /* best-effort */ }
               abortListener = null
@@ -602,7 +578,7 @@ export default {
       },
     }
 
-    OPS['team_send_message'] = { name: 'team_send_message',
+    OPS['forge_team_send_message'] = { name: 'forge_team_send_message',
       desc: '给队长或另一成员发消息：在线立即投递并唤醒，离线持久排队下次启动送达。发送方永远是调用会话（不可伪造）。完整工作流见 agent-teamwork 技能。',
       schema: {
         to: { type: 'string', required: true, description: '接收方：成员 id 或 "captain"。' },
@@ -675,7 +651,7 @@ export default {
       },
     }
 
-    OPS['team_status'] = { name: 'team_status',
+    OPS['forge_team_status'] = { name: 'forge_team_status',
       desc: '团队全貌：成员及其在线状态、带依赖和输出的任务板、以及排在你收件箱里的消息。轮询它以收集成员输出并决定下一步。完整工作流见 agent-teamwork 技能。',
       schema: {},
       handler: async (args, exec) => {
@@ -695,7 +671,7 @@ export default {
               if (record !== null && typeof record === 'object' && memberOf(record, me)) { captain = key; team = record; break }
             }
           }
-          if (team === undefined) return jsonText({ ok: true, inTeam: false, note: 'you are not part of any team; use team_create to lead one' })
+          if (team === undefined) return jsonText({ ok: true, inTeam: false, note: 'you are not part of any team; use forge_team_create to lead one' })
           const members = team.members.map((m) => {
             const live = agents.get(m.sessionId)
             return { id: m.id, sessionId: m.sessionId, role: m.role, status: live !== undefined ? live.status : 'offline' }
@@ -707,7 +683,7 @@ export default {
             const record = mailTable[key]
             if (record !== null && typeof record === 'object' && record.to === me) {
               inbox.push(record)
-              // P1-1：收件箱消费——team_status 即用户/成员查收动作，投递后删除，避免在线轮询重复收同一封
+              // P1-1：收件箱消费——forge_team_status 即用户/成员查收动作，投递后删除，避免在线轮询重复收同一封
               try { await teamsUnit.deleteRecord('mail', key) } catch (error) { /* best-effort；删除失败仅下次再收 */ }
             }
           }
@@ -726,7 +702,7 @@ export default {
       },
     }
 
-    OPS['team_delete'] = { name: 'team_delete',
+    OPS['forge_team_delete'] = { name: 'forge_team_delete',
       desc: '结束团队：打断在线成员，然后归档团队记录。可选成员会话清理（cleanup）：archive=默认，成员会话归档（可捞回）；delete=销毁（不可逆需确认）；none=只打断不归档。用完团队别留一堆成员会话——默认 archive 清掉。',
       schema: { cleanup: { type: 'string', description: '成员清理方式：archive（默认，归档可捞回）| delete（销毁不可逆，需 cleanupConfirm）| none（只打断）。' }, cleanupConfirm: { type: 'string', description: 'cleanup=delete 时必须为 "DELETE"（防误删）。' } },
       handler: async (args, exec) => {
@@ -775,7 +751,7 @@ export default {
                   await svc.deleteSessions([sid], captain, true, true)
                   cleanupResults.push({ sessionId: sid, ok: true, action: 'delete' })
                 } else {
-                  await svc.archive([sid], captain, 'team_delete')
+                  await svc.archive([sid], captain, 'forge_team_delete')
                   cleanupResults.push({ sessionId: sid, ok: true, action: 'archive' })
                 }
               } catch (error) {
@@ -791,10 +767,61 @@ export default {
       },
     }
 
-    // ── 注册（旧名保留兼容）+ 元工具 teams ──
+    // ── 注册（R17：按"同名不同动作"合并；2026-09-12 用户批）──
+    // 合并组：一个工具 + op 参数，内部派发到 OPS 里原来的 handler（OPS 本身不动，
+    // 内部调用点如 OPS['forge_team_delete'].handler 照旧可用）。
+    const MERGED = [
+      {
+        tool: 'forge_team_task',
+        desc: '团队任务板操作。op=create 建任务（title 必填，可选 assignee/dependencies）、op=claim 认领、op=update 推进状态（claimed → in_progress → completed|failed|cancelled，可带 output）。队长可动任何任务；成员只能动自己的或未指派的。',
+        ops: { create: 'forge_team_create_task', claim: 'forge_team_claim_task', update: 'forge_team_update_task' },
+      },
+      {
+        tool: 'forge_team_admin',
+        desc: '团队管理。op=add_members 批量补成员（每项独立审批与失败隔离）、op=delete 结束团队并归档（cleanup=archive 默认 | delete 不可逆需 cleanupConfirm="DELETE" | none 只打断）。',
+        ops: { add_members: 'forge_team_add_members', delete: 'forge_team_delete' },
+      },
+    ]
+    const consumed = new Set(['forge_team_wait'])
+    for (const g of MERGED) for (const k of Object.values(g.ops)) consumed.add(k)
     for (const key of Object.keys(OPS)) {
+      if (consumed.has(key)) continue
+      if (key === 'forge_team_status') continue // 单独注册（见下）
       const op = OPS[key]
       registerTool(ctx, op.name, op.desc, op.schema, op.handler)
+    }
+    // status + wait 合成一个：给了等待参数就等，否则直接看。
+    {
+      const st = OPS['forge_team_status']
+      const wt = OPS['forge_team_wait']
+      registerTool(ctx, 'forge_team_status',
+        '团队全貌：成员与在线状态、带依赖和输出的任务板、排在你收件箱里的消息。**给了 waitSeconds/memberId/taskId 就改成等待**（等任一满足即唤醒，不消耗额外步骤；默认 600 秒、上限 3600，超时返回 timeout 可再等）——用等待替代轮询，别做重复劳动。',
+        {
+          memberId: { type: 'string', description: '等待用：要等的成员 id；省略则等任意消息。' },
+          taskId: { type: 'string', description: '等待用：要等的任务 id（如 "t2"）。' },
+          waitSeconds: { type: 'number', description: '等待用：最长等待秒数（默认 600，上限 3600）。' },
+        },
+        async (args, exec) => {
+          const wantsWait = args.waitSeconds !== undefined || args.memberId !== undefined || args.taskId !== undefined
+          if (!wantsWait) return st.handler(args, exec)
+          const t = args.waitSeconds !== undefined && Number.isFinite(Number(args.waitSeconds)) ? Number(args.waitSeconds) : undefined
+          return wt.handler({ memberId: args.memberId, taskId: args.taskId, timeoutSeconds: t }, exec)
+        })
+    }
+    for (const g of MERGED) {
+      const schema = { op: { type: 'string', required: true, description: '要执行的动作：' + Object.keys(g.ops).join(' | ') } }
+      for (const k of Object.values(g.ops)) {
+        const s = OPS[k].schema
+        if (s === null || typeof s !== 'object') continue
+        for (const [p, d] of Object.entries(s)) if (schema[p] === undefined) schema[p] = d
+      }
+      const map = g.ops
+      registerTool(ctx, g.tool, g.desc, schema, async (args, exec) => {
+        const op = typeof args.op === 'string' ? args.op.trim() : ''
+        const key = map[op]
+        if (key === undefined) return jsonText({ ok: false, error: 'unknown op: ' + op, ops: Object.keys(map) })
+        return OPS[key].handler(args, exec)
+      })
     }
     // 元工具 description 程序生成（grok §4：参数面不能散文，要从 OPS[i].schema 拉，不手写第二份）
     const opParamTable = Object.keys(OPS).map((key) => {
@@ -807,16 +834,6 @@ export default {
       }).join(', ')
       return '- `' + key.replace('team_', '') + '` → ' + params
     }).join('\n')
-    registerTool(ctx, 'teams',
-      '团队协作入口（元工具）。何时用 team 而不是 spawn_model_subagent / session_send：需要多角色协作（写码+评审+测试）、成员互发消息、任务依赖与等待时用 teams；一次性隔离抛件用 spawn_model_subagent；跨会话简单投递用 session_send。\nop 必填，子操作参数如下：\n' + opParamTable,
-      { op: { type: 'string', required: true, description: '子操作名（见参数表）：' + Object.keys(OPS).map((k) => k.replace('team_', '')).join(' | ') + '。' } },
-      async (args, exec) => {
-        const opName = String(args?.op ?? '')
-        const full = opName.startsWith('team_') ? opName : 'team_' + opName
-        const op = OPS[full]
-        if (op === undefined) return jsonText({ ok: false, error: 'unknown team op "' + opName + '"; expected one of ' + Object.keys(OPS).map((k) => k.replace('team_', '')).join(', ') })
-        return await op.handler(args, exec)
-      })
 
     // ── 模板系统（P1-v0 骨架：save/capture + search + distill；modelHint 结构先定） ──
     // 模板 = 角色骨架 + 每角色 modelHint（推荐类别，非具体模型——导出分享无模型差异）+ 任务骨架。
@@ -881,7 +898,11 @@ export default {
       }
       return sanitizeTemplate(rec)
     }
-    registerTool(ctx, 'team_template_save',
+    // R17：模板 6 个工具合并成一个 forge_team_template({ op })（2026-09-12）。下面用 reg 收集，
+    // 块末统一注册；desc/schema/handler 原样搬运，不改参数。
+    const tplCollected = []
+    const reg = (c, name, desc, schema, handler) => { tplCollected.push({ name, desc, schema, handler }) }
+    reg(ctx, 'forge_team_template_save',
       '保存一个团队模板：members（memberId/role/prompt + 可选 modelHint 推荐类别）+ tasks 骨架。modelHint 是推荐类别（series/tier/purpose），不带具体模型——导出分享无模型差异（实际模型实例化时按本地目录适配）。也用于 capture（从当前队伍蒸馏模板）。完整工作流见 agent-teamwork 技能。',
       {
         name: { type: 'string', required: true, description: '模板名（1-64 字）。' },
@@ -899,7 +920,7 @@ export default {
         await templatePut(sanitized)
         return jsonText({ ok: true, templateId: sanitized.templateId, note: '模板已保存' })
       })
-    registerTool(ctx, 'team_template_search',
+    reg(ctx, 'forge_team_template_search',
       '搜索团队模板库（关键词分词命中：name+description+角色），返回**匹配模板的完整内容**（每角色 memberId/role/prompt/modelHint 全量 + tasks 全量）。两种用法：①主管/人管理模板库时翻找；②**代理被指定"用 xxx 模板"时定位那条**（搜到全量后自行适配——按本地模型目录解析 modelHint、增删角色、微调任务，再 teams({op:"create"}) 建队）。**query 为空返回全部模板**（列表铺开用）。日常任务无需先搜（模板直接贴给代理即可），库大了/指定用哪条才搜。',
       { query: { type: 'string', description: '任务描述搜索词（如"写码评审测试三人组"）；为空返回全部模板。' }, limit: { type: 'number', description: '最多返回条数（默认 50）。' } },
       async (args) => {
@@ -919,7 +940,7 @@ export default {
         // 返回全量（代理读模板内容做适配，不是读摘要）
         return jsonText({ ok: true, count: scored.length, templates: scored.map((x) => x.t) })
       })
-    registerTool(ctx, 'team_template_distill',
+    reg(ctx, 'forge_team_template_distill',
       '把当前队伍蒸馏成模板（capm 或团队会话用）：把调用方所在 team（或 targetSessionId 指定 captain 的队伍）的成员/任务快照为模板，具体模型清洗为 modelHint 推荐类别，分享无模型差异。也可以在完成任务后调用——把这次成功的队伍配置沉淀为可复用模板。',
       { source: { type: 'string', description: '来源标注（默认 capture）。' }, targetSessionId: { type: 'string', description: '队伍 captain 会话 id；省略=调用方自己（UI 路径必传——UI 不在会话里跑）。' } },
       async (args, exec) => {
@@ -934,7 +955,7 @@ export default {
           return jsonText({ ok: true, templateId: rec.templateId, note: '当前队伍已蒸馏为模板；模板只含角色/任务骨架 + modelHint 推荐类别，不含具体模型' })
         })
       })
-    registerTool(ctx, 'team_template_export',
+    reg(ctx, 'forge_team_template_export',
       '导出团队模板为 JSON 文本（分享/下载）。返回模板完整 JSON（含 modelHint 推荐类别，不含具体模型/密钥/路径）——分享给他人，导入方 LLM 按本地目录适配。',
       { templateId: { type: 'string', required: true, description: '模板 id。' } },
       async (args) => {
@@ -942,9 +963,9 @@ export default {
         if (rec === undefined) return jsonText({ ok: false, error: 'template not found' })
         return jsonText({ ok: true, templateId: rec.templateId, json: JSON.stringify(sanitizeTemplate(rec), null, 2), note: '导出成功；modelHint 为推荐类别，实例化时按本地适配' })
       })
-    registerTool(ctx, 'team_template_import',
+    reg(ctx, 'forge_team_template_import',
       '导入团队模板（分享来的 JSON 文本）——**人工/UI 分享用**：人贴 JSON 校验（memberId/role 合法性）后入库。代理请勿用本工具（代理路径=search 读全量 → 自己多轮适配 → teams({op:"create"}) 创建）。',
-      { json: { type: 'string', required: true, description: '模板 JSON 文本（来自 team_template_export）。' } },
+      { json: { type: 'string', required: true, description: '模板 JSON 文本（来自 forge_team_template_export）。' } },
       async (args) => {
         try {
           const parsed = JSON.parse(String(args?.json ?? ''))
@@ -959,7 +980,7 @@ export default {
           return jsonText({ ok: false, error: 'bad template JSON: ' + errText(error) })
         }
       })
-    registerTool(ctx, 'team_template_remove',
+    reg(ctx, 'forge_team_template_remove',
       '删除一条模板（模板库管理）。删除键在人工——本工具删除不可恢复；代理一般不需要（模板是给人工管理的）。',
       { templateId: { type: 'string', required: true, description: '模板 id。' } },
       async (args) => {
@@ -974,6 +995,27 @@ export default {
           return jsonText({ ok: true, templateId: id, note: '模板已删除' })
         })
       })
+
+    // R17：模板 6 个工具合并成一个带 op 的工具。参数面 = 各子工具 schema 的并集 + op。
+    {
+      const map = {}
+      const schema = { op: { type: 'string', required: true, description: '要执行的动作：save | search | distill | export | import | remove' } }
+      for (const t of tplCollected) {
+        map[t.name] = t.handler
+        const s = t.schema
+        if (s === null || typeof s !== 'object') continue
+        for (const [p, d] of Object.entries(s)) if (schema[p] === undefined) schema[p] = d
+      }
+      registerTool(ctx, 'forge_team_template',
+        '团队模板库（角色骨架 + 推荐类别 modelHint + 任务骨架）。op=save 保存、op=search 搜索（query 为空则列全部，返回匹配模板的全量内容）、op=distill 把当前队伍沉淀成模板、op=export 导出 JSON 文本（分享用）、op=import 从 JSON 文本入库（人工/UI 分享用，代理别用）、op=remove 删除一条（不可恢复）。',
+        schema,
+        async (args, exec) => {
+          const op = typeof args.op === 'string' ? args.op.trim() : ''
+          const key = map['forge_team_template_' + op]
+          if (key === undefined) return jsonText({ ok: false, error: 'unknown op: ' + op, ops: ['save', 'search', 'distill', 'export', 'import', 'remove'] })
+          return key(args, exec)
+        })
+    }
 
     ctx.on('agent/disposed', (payload) => {
       const agent = payload !== undefined && payload.agent !== undefined ? payload.agent : undefined
@@ -995,7 +1037,8 @@ export default {
       })).catch(() => { /* never throw from listener */ })
     })
 
-    ctx.on('agent/session-start', (payload) => {
+    // 0.2.0-rc.2: agent/session-start → the asynchronous, serial agent/created.
+    ctx.on('agent/created', (payload) => {
       const agent = payload !== undefined && payload.agent !== undefined ? payload.agent : undefined
       if (agent === undefined || typeof agent.id !== 'string') return
       requireUnit().then((unit) => enqueue(async () => {
@@ -1022,7 +1065,7 @@ export default {
       })).catch(() => { /* never throw from a listener */ })
     })
 
-    // ── teamDeleteApi：console（Web 控制台 3081）调 team_delete 逻辑（cleanup 三模式）──
+    // ── teamDeleteApi：console（Web 控制台 3081）调 forge_team_delete 逻辑（cleanup 三模式）──
     // console 是独立 HTTP（无 exec.agent）；UI 路径=人操作（token + 确认卡已挡），captain 由 UI 指定。
     ctx.provide('teamDeleteApi', {
       async delete(options) {
@@ -1036,7 +1079,7 @@ export default {
         const exec = cleanup === 'delete'
           ? { agent: { session: { header: { origin: 'main', parentSession: '' } } }, signal: undefined }
           : undefined
-        const out = await OPS['team_delete'].handler({ captainId: captain, cleanup, cleanupConfirm: confirm }, exec)
+        const out = await OPS['forge_team_delete'].handler({ captainId: captain, cleanup, cleanupConfirm: confirm }, exec)
         return JSON.parse(out)
       },
     })

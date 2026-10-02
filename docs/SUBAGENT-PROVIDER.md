@@ -1,5 +1,12 @@
 # 自研 subagent provider（设计文档）
 
+> ⚠️ **2026-10-02 重定基准提示**：本文的对照基准是 **0.1.0-rc.6**，部分内容在
+> **0.2.0-rc.2** 已失效 —— 例如 §3.2 列的 `SubagentRuntime.reportFrom` 在 rc.2
+> **不存在**（基线里零命中），§1 要解决的「report/结算双投递」问题所依赖的过渡补丁
+> `subflt` 也已被摘除。**§3.1 的 `SubagentProvider` 接口仍是本文最有价值的资产**，
+> 但每个签名都要对着 rc.2 原文重新核一遍再动手。
+> 当前决策与在办计划见 `docs/ADAPTATION-0.2.0-rc.2.md`。
+>
 > 状态：设计阶段 / 独立里程碑（未排期）。
 > 对照基准：接口签名以 `@deepseek-ai/dsh` **0.1.0-rc.6** 为准（dsh-subagent /
 > dsh-subagent-*-driver / dsh-tool-cordis 同为 0.1.0-rc.6）。

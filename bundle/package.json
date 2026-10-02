@@ -5,20 +5,21 @@
   "license": "MIT",
   "type": "module",
   "files": [
-    "cordis.npm.yml",
+    "cordis.patch.yml",
     "plugins/",
+    "packages/",
     "README.md",
     "LICENSE",
     "NOTICE"
   ],
   "exports": {
-    "./cordis.npm.yml": "./cordis.npm.yml",
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./plugins/*": "./plugins/*",
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.npm.yml"
+      "patch": "./cordis.patch.yml"
     }
   },
   "peerDependencies": {
@@ -26,9 +27,10 @@
     "@deepseek-ai/dsh-tools": ">=0.1.0-rc.6 <0.2.0"
   },
   "dependencies": {
-    "@dsh-forge/dsh-dynrestore": "^0.1.0",
-    "@dsh-forge/dsh-plugmgr": "^0.1.0",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "@local/dsh-forge-ui": "link:./packages/dsh-forge-ui",
+    "@local/dsh-mailbridge-card": "link:./packages/dsh-mailbridge-card",
+    "@local/dsh-dynrestore": "link:./packages/dynrestore"
   },
   "engines": {
     "node": ">=22"

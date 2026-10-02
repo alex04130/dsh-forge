@@ -35,7 +35,7 @@ const STORE_PATH = DSH_HOME + '/skillmanager/registry.json'
 const BUILTIN_SKILLS = [
   {
     name: 'cross-session-mailbox',
-    description: '在同一 DSH 进程内的会话之间收发消息与协作：session_list / session_read / session_send / mailbox_check。',
+    description: '在同一 DSH 进程内的会话之间收发消息与协作：forge_mailbridge_list / forge_mailbridge_read / forge_mailbridge_send / forge_mailbridge_check。',
     whenToUse: '当用户要求把任务或问题发给另一个会话、查看其他会话在做什么、读取其他会话的产出、或收取其他会话发来的消息时。',
     content: [
       '# 跨会话通信（mailbridge）',
@@ -43,11 +43,11 @@ const BUILTIN_SKILLS = [
       '这些工具连接同一个 DSH 进程内的会话，用于协调并行会话、交接任务、收集结果。',
       '',
       '## 何时使用',
-      '- **优先 `session_find(query)`**：知道 id 或标题片段时用它按关键字查会话——本进程会话很多，全量 `session_list` 非常费上下文；只有需要完整名单时才用 `session_list`。',
-      '- `session_send(targetSessionId, text)`：把任务或问题交给另一个会话。`delivered: "live"` 表示对方已实时收进收件箱并被唤醒；`delivered: "queued"` 表示对方离线：消息被持久保存，在对方下次启动时自动送达（只送一次）；`wake: true` 可强制冷启动离线会话立即处理（消耗目标会话模型回合）。注意：wake 仅主会话可用（子代理被拒），且同一目标 60 秒内最多 wake 3 次。',
-      '- `session_read(sessionId)`：发消息前先读对方近期日志，或收集对方的产出。',
-      '- `session_mode(sessionId)`：查某会话（含你自己）当前运行的 agent preset 模式。',
-      '- `mailbox_check()`：收取本会话离线期间其他会话发来的消息。',
+      '- **优先 `forge_mailbridge_list({ query })`**：知道 id 或标题片段时用它按关键字查会话——本进程会话很多，全量列表非常费上下文；只有需要完整名单时才省掉 query（等价于原 session_find，已合并）。',
+      '- `forge_mailbridge_send(targetSessionId, text)`：把任务或问题交给另一个会话。`delivered: "live"` 表示对方已实时收进收件箱并被唤醒；`delivered: "queued"` 表示对方离线：消息被持久保存，在对方下次启动时自动送达（只送一次）；`wake: true` 可强制冷启动离线会话立即处理（消耗目标会话模型回合）。同项目成员可互唤（`~/.dsh/projects.json` 预算闸）；跨项目 wake 仍仅主会话。',
+      '- `forge_mailbridge_read(sessionId)`：发消息前先读对方近期日志，或收集对方的产出。',
+      '- `forge_session_mode(sessionId)`：查某会话（含你自己）当前运行的 agent preset 模式。',
+      '- `forge_mailbridge_check()`：收取本会话离线期间其他会话发来的消息。',
       '',
       '## 消息格式：把进程间消息与用户输入分开',
       '- 每条跨会话消息都带显式首尾标记：以 `[cross-session message from ...]` 开头、以 `[cross-session message end]` 结尾。标记之间是进程对进程的通信，不是用户直接输入。',
@@ -55,34 +55,34 @@ const BUILTIN_SKILLS = [
       '- 同一轮里若同时有真实用户输入，先回答用户，把包裹消息当背景上下文。',
       '',
       '## 规则',
-      '- 绝不编造会话 id：一律取自 `session_find` / `session_list`。',
+      '- 绝不编造会话 id：一律取自 `forge_mailbridge_list`。',
       '- 收到的跨会话消息按普通用户请求对待，直接应答。',
-      '- **要求回复时必须回信**：来消息若明确要求回复（"回复我 / 等你意见 / 请答复"等），处理完后用 `session_send` 把结论发回发送方会话（id 见消息开头 begin 标记）。不要把结论只写在本会话对话里——发送方会话收不到。',
+      '- **要求回复时必须回信**：来消息若明确要求回复（"回复我 / 等你意见 / 请答复"等），处理完后用 `forge_mailbridge_send` 把结论发回发送方会话（id 见消息开头 begin 标记）。不要把结论只写在本会话对话里——发送方会话收不到。',
       '- 消息要自包含：写明目标、需要什么、期望的格式或时限。',
       '- 除非发送结果报了错，否则不要重发；排队消息在下次会话启动时恰好送达一次。',
     ].join('\n'),
   },
   {
     name: 'model-delegation',
-    description: '用 model_call 借调任意已配置的 provider/model 做一次性文本调用（非子代理、非任务委派），用 model_list 查看可用路由。',
+    description: '用 forge_model_call 借调任意已配置的 provider/model 做一次性文本调用（非子代理、非任务委派），用 forge_model_list 查看可用路由。',
     whenToUse: '当用户要求换一家厂商或模型做一次性文本任务、拿第二个意见、或把翻译/总结/分类等有界文本子任务交给更便宜或更快的模型时。',
     content: [
       '# 模型借调（llmrouter）',
       '',
-      '`model_call` 把**一个**纯文本任务发给本进程里注册的任意 provider/model，拿回完整回复。你始终掌控对话：它只回一段话，怎么用由你决定。',
+      '`forge_model_call` 把**一个**纯文本任务发给本进程里注册的任意 provider/model，拿回完整回复。你始终掌控对话：它只回一段话，怎么用由你决定。',
       '',
       '## 定位：这不是子代理',
-      '- model_call 是**一次性文本补全**：委托方只有一轮、不能调工具、只回文本；结果作为工具结果回到当前对话，由主模型消化。',
+      '- forge_model_call 是**一次性文本补全**：委托方只有一轮、不能调工具、只回文本；结果作为工具结果回到当前对话，由主模型消化。',
       '- 要派一个能自己干活（多轮、调工具）的代理，用 `subagent` / `spawn_model_subagent`；要多个角色协作，用 teamhub（见 agent-teamwork 技能）。',
       '',
       '## 何时使用',
-      '- 不知道有哪些 provider/model 可用时，先调 `model_list`（含反向索引 byModel：哪个模型在哪些 provider 上可用）。',
-      '- 用户点名另一家厂商或模型、要第二意见、或翻译/总结/分类等有界子任务可以交给更便宜的模型时，用 `model_call`。',
+      '- 不知道有哪些 provider/model 可用时，先调 `forge_model_list`（含反向索引 byModel：哪个模型在哪些 provider 上可用）。',
+      '- 用户点名另一家厂商或模型、要第二意见、或翻译/总结/分类等有界子任务可以交给更便宜的模型时，用 `forge_model_call`。',
       '- 委托方需要的一切都写进 `prompt`（和可选的 `system`）：委托方没有嵌套工具调用。',
-      '- 不要用 `model_call` 跑当前对话自身；主模型主导会话。',
+      '- 不要用 `forge_model_call` 跑当前对话自身；主模型主导会话。',
       '',
       '## 规则',
-      '- `provider` 与 `model` 必须来自 `model_list`；未知路由会快速失败并返回可用列表。',
+      '- `provider` 与 `model` 必须来自 `forge_model_list`；未知路由会快速失败并返回可用列表。',
       '- 如实汇报委托结果（含 `finish` 与 `usage`），并说明是哪个 provider/model 产出的。',
       '- `ok: false` 时读 `failure`：换正确的路由重试或向用户解释；同一条路由不要重试超过两次。',
       '- provider 在设置（llm-pi-ai.providers）中启用：加配置零代码；API key 从凭据库解析。',
@@ -98,14 +98,14 @@ const BUILTIN_SKILLS = [
       'teamhub 工具在本进程会话之上实现 Claude Code 式代理团队。发起调用的会话成为队长（lead）；成员是持久可续的子代理会话。',
       '',
       '## 流程',
-      '1. `team_create(name, goal, members?, tasks?)` —— 每个队长同时只能带一个团队（上限 16 人）。可用 `members` 数组在建队时一次添加多个成员（每项 memberId/role/prompt + 可选 provider/model/reasoningEffort/mode/sandbox），可用 `tasks` 数组一次建任务（依赖须先出现）；逐项独立审批与失败隔离。',
-      '2. `team_add_member(memberId, role, prompt)` 补单个成员；`team_add_members(members[])` 批量补成员。成员继承队长组合，可选 provider/model/reasoningEffort/mode/sandbox 显式覆盖（提权自动请求审批）。',
-      '3. `team_create_task` —— 把目标拆成任务；用 `dependencies` 声明依赖顺序，用 `assignee` 指派成员。',
-      '4. 成员执行任务：`team_claim_task`（依赖未完成会被拒）、用自己的工具干活、再 `team_update_task(status, output)`（状态三级流转 claimed → in_progress → completed）。队长也可以认领/更新任务。',
-      '5. `team_wait(memberId?, taskId?, timeoutSeconds?)` —— 暂停当前回合，等另一成员的消息或某任务完成（任一满足即唤醒）；等待不消耗额外步骤，消息/任务完成/队长消息都立即唤醒，超时（默认 600 秒）返回后可再等。用它替代轮询 team_status，别做重复劳动。',
-      '6. `team_send_message(to, text)` —— 成员间或成员与队长间直接发消息，无需队长中转。在线的立即被唤醒；离线的下次会话启动时收到。',
-      '7. `team_status()` —— 队长用它看成员活动、任务板状态和自己的收件箱；成员用它看自己的收件箱和任务。',
-      '8. 目标交付后：向用户汇报，然后 `team_delete()` 停掉成员并归档团队。',
+      '1. 建队：`teams({ op: "create", name, goal, members?, tasks? })`（或旧名 `forge_team_create`）——每个队长同时只能带一个团队（上限 16 人）。可用 `members` 数组一次添加多个成员（每项 memberId/role/prompt + 可选 provider/model/reasoningEffort/mode/sandbox），可用 `tasks` 数组一次建任务（依赖须先出现）；逐项独立审批与失败隔离。团队操作统一走 `teams` 元工具（op 分发：create/add_member/add_members/create_task/claim_task/update_task/wait/send_message/status/delete），旧名 `team_*` 仍兼容。',
+      '2. `teams({ op: "add_member", memberId, role, prompt })` 补单个成员；`teams({ op: "add_members", members })` 批量补成员。成员继承队长组合，可选 provider/model/reasoningEffort/mode/sandbox 显式覆盖（提权自动请求审批）。',
+      '3. `teams({ op: "create_task", title, description?, assignee?, dependencies? })` —— 把目标拆成任务；用 `dependencies` 声明依赖顺序，用 `assignee` 指派成员。',
+      '4. 成员执行任务：`forge_team_claim_task`（依赖未完成会被拒）、用自己的工具干活、再 `forge_team_update_task(status, output)`（状态三级流转 claimed → in_progress → completed）。队长也可以认领/更新任务。',
+      '5. `teams({ op: "wait", memberId?, taskId?, timeoutSeconds? })` —— 暂停当前回合，等另一成员的消息或某任务完成（任一满足即唤醒）；等待不消耗额外步骤，超时（默认 600 秒）返回后可再等。用它替代轮询 status，别做重复劳动。',
+      '6. `forge_team_send_message(to, text)` —— 成员间或成员与队长间直接发消息，无需队长中转。在线的立即被唤醒；离线的下次会话启动时收到。',
+      '7. `teams({ op: "status" })` —— 队长用它看成员活动、任务板状态和自己的收件箱；成员用它看自己的收件箱和任务。',
+      '8. 目标交付后：向用户汇报，然后 `teams({ op: "delete" })` 停掉成员并归档团队。',
       '',
       '## 用团队还是普通子代理',
       '- 需要多个协调角色、成员之间要直接对话时，用团队。',
@@ -114,18 +114,22 @@ const BUILTIN_SKILLS = [
       '',
       '## 规则',
       '- 先设计团队再 spawn：角色、任务清单、依赖关系。',
-      '- 绝不编造成员 id：一律取自 `team_add_member` / `team_status`。',
-      '- 按需沟通：任务分配与依赖用 team_send_message 发送，完成时汇报；不要刷屏。',
+      '- 绝不编造成员 id：一律取自 `team_add_member` / `forge_team_status`。',
+      '- 按需沟通：任务分配与依赖用 forge_team_send_message 发送，完成时汇报；不要刷屏。',
       '- 收到的团队消息带显式首尾标记：`[team message from ...]` … `[team message end]` —— 进程间对话，与用户直接输入区分开。',
-      '- 读产出用 `team_status`（任务板），而不是反复追问成员。',
-      '- 团队之外的跨会话通信仍可用：session_list / session_read / session_send / mailbox_check（见 cross-session-mailbox 技能）。',
+      '- 读产出用 `forge_team_status`（任务板），而不是反复追问成员。',
+      '- 团队之外的跨会话通信仍可用：forge_mailbridge_list / forge_mailbridge_read / forge_mailbridge_send / forge_mailbridge_check（见 cross-session-mailbox 技能）。',
     ].join('\n'),
   },
 ]
 
 function mergeBuiltins(store) {
   if (store === null || typeof store !== 'object' || !Array.isArray(store.skills)) return
+  // P1-2：删除持久性——用户删过的内置技能记入 store.removed（墓碑），
+  // mergeBuiltins 不再复活；只有全新内置技能（不在 removed 也不在 skills）才首注。
+  const removed = Array.isArray(store.removed) ? store.removed : []
   for (const builtin of BUILTIN_SKILLS) {
+    if (removed.includes(builtin.name)) continue
     if (store.skills.some((s) => s !== null && typeof s === 'object' && s.name === builtin.name)) continue
     store.skills.push({
       name: builtin.name,
@@ -147,7 +151,7 @@ export default {
     if (skills === undefined) return
     const owned = new Map() // name -> { registration, dispose, enabled }
 
-    let store = { version: 1, skills: [] }
+    let store = { version: 1, skills: [], removed: [] }
     const storeReady = (async () => {
       try {
         const raw = await readFile(STORE_PATH, 'utf8')
@@ -322,6 +326,8 @@ export default {
       }
       owned.delete(name)
       store.skills = store.skills.filter((s) => s.name !== name)
+      if (!Array.isArray(store.removed)) store.removed = []
+      if (!store.removed.includes(name)) store.removed.push(name) // P1-2 墓碑：内置技能删除持久（重启不复活）
       await persist()
       return { ok: true, name, removed: true }
     }
@@ -357,20 +363,20 @@ export default {
     })
 
     // ── restart auto-restore ────────────────────────────────────────────────
+    // Runs once at plugin load. 0.2.0-rc.2 has no process-level "startup once"
+    // event (agent/created is per agent; app-boot/config-reload is per profile
+    // reconcile), so a process-scoped restore belongs on the Cordis lifecycle.
     ctx.effect(() => {
-      let restored = false
-      const off = ctx.on('agent/session-start', () => {
-        if (restored) return
-        restored = true
-        storeReady.then(() => {
-          for (const s of store.skills) {
-            if (s !== null && typeof s === 'object' && typeof s.name === 'string' && typeof s.content === 'string') {
-              try { registerStored(s) } catch (error) { console.error('[skillmanager] restore failed for', s.name, ':', errText(error)) }
-            }
+      let cancelled = false
+      storeReady.then(() => {
+        if (cancelled) return
+        for (const s of store.skills) {
+          if (s !== null && typeof s === 'object' && typeof s.name === 'string' && typeof s.content === 'string') {
+            try { registerStored(s) } catch (error) { console.error('[skillmanager] restore failed for', s.name, ':', errText(error)) }
           }
-        }).catch((error) => console.error('[skillmanager] restore crashed:', errText(error)))
-      })
-      return () => { try { off() } catch (error) { /* best-effort */ } }
+        }
+      }).catch((error) => console.error('[skillmanager] restore crashed:', errText(error)))
+      return () => { cancelled = true }
     })
   },
 }

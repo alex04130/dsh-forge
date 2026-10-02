@@ -77,7 +77,7 @@
 | sklui | `skill_disable` | 禁用本管理器添加的技能（可恢复） |
 | sklui | `skill_enable` | 重新启用本管理器禁用的技能 |
 | sklui | `skill_remove` | 永久移除本管理器添加的技能 |
-| plins | `dev_stop_dyn_plugin` | 按 pluginId 前缀应急停止动态插件（宿主+客户端两半） |
+| plins | `forge_dev_stop_dyn_plugin` | 按 pluginId 前缀应急停止动态插件（宿主+客户端两半） |
 | sfind | `session_find` | 按关键字查会话（id/标题），优先于 session_list 省上下文 |
 | archive | `archive_read_event` | 按 sessionId+seq 精确读事件及上下文窗口（证据句柄的权威读取端） |
 | archive | `archive_list_events` | 列会话事件索引（seq/type/time/surface），快速扫一眼 |
@@ -898,9 +898,9 @@
 
 ## plins（插件市场宿主半部 · auto-plugins 动态插件）
 
-**插件级说明**：`auto-plugins.json` 中 `idPrefix: "plins"` 的动态插件宿主半部，本职是社区插件市场（browse / install / uninstall，经 `harness.handle` 暴露 `plinst/*` RPC，非模型工具）。与本文档相关的是它顺带注册的一个**模型工具** `dev_stop_dyn_plugin`。该工具仅在 `dynamicCordisRunner` 服务存在时注册（hostCode L221-222）；若服务缺失，工具根本不存在（调用方会收到"无此工具"）。
+**插件级说明**：`auto-plugins.json` 中 `idPrefix: "plins"` 的动态插件宿主半部，本职是社区插件市场（browse / install / uninstall，经 `harness.handle` 暴露 `plinst/*` RPC，非模型工具）。与本文档相关的是它顺带注册的一个**模型工具** `forge_dev_stop_dyn_plugin`。该工具仅在 `dynamicCordisRunner` 服务存在时注册（hostCode L221-222）；若服务缺失，工具根本不存在（调用方会收到"无此工具"）。
 
-### dev_stop_dyn_plugin
+### forge_dev_stop_dyn_plugin
 
 - **所属插件**：plins（auto-plugins 动态插件）
 - **一句话用途**：按 pluginId 前缀应急停止一个运行中的动态插件，同时停掉其 Host 与 Client 两半；用于动态插件客户端把 UI 搞崩时的救援。
@@ -1276,7 +1276,7 @@
 - `hostCode` 是返回 `{ apply(ctx) { ... } }` 的代码字符串，由 dynboot 恢复运行。
 - 工具注册用 `harness.defineTool({name, description, parameters, output, execute})` + `harness.registerTool(ctx, tool)`（`sklui` hostCode L19-39、`sfind` hostCode L31-79、`plins` hostCode L223-250）；output 统一 `{schema: {type: 'string'}, render: 文本块}`，与 composition 插件同构。
 - `harness.handle('<prefix>/<name>', fn)` 暴露客户端面板 RPC（如 `skillui/*`、`plinst/*`），不属于模型工具面。
-- 动态插件代码改动的生效边界：改 `auto-plugins.json` 后旧实例仍在内存运行，须 `dev_stop_dyn_plugin <prefix>` 停旧实例，重启后用新代码重新 define。
+- 动态插件代码改动的生效边界：改 `auto-plugins.json` 后旧实例仍在内存运行，须 `forge_dev_stop_dyn_plugin <prefix>` 停旧实例，重启后用新代码重新 define。
 
 ## 附录 B：关键数据文件与持久层位置
 

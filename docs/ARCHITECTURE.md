@@ -1,7 +1,21 @@
 # DSH 扩展套件架构文档
 
-> 本文档记录 `/home/alex/.dsh` 下自建扩展套件的架构决策、注入方式对比、分层规则与已知风险。
-> 最后更新：2026-08-15。作者：cordis 会话 + 编辑模式会话。
+> ⚠️ **本文档已过期，当前权威是 [`docs/ADAPTATION-0.2.0-rc.2.md`](ADAPTATION-0.2.0-rc.2.md)。**
+>
+> 最后更新 2026-08-15，早于 **0.2.0-rc.2 适配**（基线换成 WSL 部署代码）。
+> 下面这些被本文描述的组件**在新基线里已经不存在**，读到它们请忽略：
+> `archive`、`verify`、`sesmgr`（并入 `forge-ui`）、`plsm`（`forge-ui.config.json` 里 `false`）、
+> `gitdk`、`modlpk`、`imgsub`、`sfind`、`subflt`、`stfx`、`plins`、`sklui`、以及
+> `router-standard` preset（已删除）。
+>
+> **已核验仍然成立的**：§1 的注入方式分类、host / preset / dynamic 三层分层规则、
+> 「勿在 React 插槽搬 DOM」这类 React 插槽告诫、`lib/` 是共享模块目录这一点。
+> **已核验需要改的**：任何说"路径从部署常量取"的地方 —— 现在一律从
+> `ctx.profileContext.dir` 取；`profiles/web` 硬编码是曾经的 bug。
+>
+> 本文档的行号级重写未排期；需要当前事实请查 ADAPTATION 文档与 README。
+>
+> 原文摘要：本文档记录自建扩展套件的架构决策、注入方式对比、分层规则与已知风险（2026-08-15）。
 
 ## 1. 注入方式对比（八种，按"该用哪个"排序）
 
@@ -125,7 +139,7 @@ mailbridge（跨会话）、llmrouter（模型委派）、modeswitch（切 prese
 `.agent-presets/router-standard/`：agent.cordis.yml + router-bootstrap.mjs + router-core.mjs（改编自 dsh-router-standard / dsh-anchored-standard，MIT，见 NOTICE）。
 
 ### 动态插件（`auto-plugins.json`，共 12 条）
-gitdk（disabled）、modpk（模式下拉框）、modlpk（模型+等级选择器）、imgsub（子代理图片客户端补丁）、**sklui**（skill 管理器：6 个模型工具 + `skillui/*` RPC + 侧栏设置面板；持久化经 `skillRegistry` 服务桥转发到 skillmanager.mjs）、**plins**（插件市场：`plinst/*` RPC + `dev_stop_dyn_plugin` 应急停止工具）、**sfind**（`session_find` 会话查找工具）、**subflt**（子代理 report/结算通道：reportFrom 包 steer + 同轮结算去重；过渡补丁，终态见 docs/SUBAGENT-PROVIDER.md）、**stfx**（侧栏 Settings 行对齐 + cordis 面板锚定）、**steer**（子代理会话 Ctrl+Enter 插话，host 直发 `agent.steer`）、**sesmgr**（子会话管理面板：三分区目录 + 侧栏 Archived 浮层 + 删除弹窗；host 薄委托 mailbridge 的 sessionmgmt 服务，#64→#66 i18n/v8）、**plsm**（质粒面板 v0.1.1：只读展示，`plasmid.list/detail` 包私有 RPC，host 经 fs 直读 registry.json；`data-plsm-actions` 空槽预留 v0.2 写面，#71）。
+gitdk（disabled）、modpk（模式下拉框）、modlpk（模型+等级选择器）、imgsub（子代理图片客户端补丁）、**sklui**（skill 管理器：6 个模型工具 + `skillui/*` RPC + 侧栏设置面板；持久化经 `skillRegistry` 服务桥转发到 skillmanager.mjs）、**plins**（插件市场：`plinst/*` RPC + `forge_dev_stop_dyn_plugin` 应急停止工具）、**sfind**（`session_find` 会话查找工具）、**subflt**（子代理 report/结算通道：reportFrom 包 steer + 同轮结算去重；过渡补丁，终态见 docs/SUBAGENT-PROVIDER.md）、**stfx**（侧栏 Settings 行对齐 + cordis 面板锚定）、**steer**（子代理会话 Ctrl+Enter 插话，host 直发 `agent.steer`）、**sesmgr**（子会话管理面板：三分区目录 + 侧栏 Archived 浮层 + 删除弹窗；host 薄委托 mailbridge 的 sessionmgmt 服务，#64→#66 i18n/v8）、**plsm**（质粒面板 v0.1.1：只读展示，`plasmid.list/detail` 包私有 RPC，host 经 fs 直读 registry.json；`data-plsm-actions` 空槽预留 v0.2 写面，#71）。
 
 ### 客户端面板（UI 层）
 - `@local/dsh-plugmgr`（插件市场）：**自主发现**——host/注入/官方三类经 `remote.pluginInventory.list()`（loader 条目：`entryId/moduleName/enabled/fiberPhase`）按模块名前缀分类（`./`、`@local/` = 本地；`@deepseek-ai/`、`cordis:` = 官方；其余 = 注入），不再硬编码。

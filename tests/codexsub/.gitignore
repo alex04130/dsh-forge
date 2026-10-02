@@ -1,0 +1,4 @@
+# 运行时生成物，不入库
+codexsub-testable.generated.mjs
+dsh-home/
+methods.log

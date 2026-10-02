@@ -7,7 +7,7 @@
 
 | 工具 | 插件 | 形态 | 描述（首句） |
 |---|---|---|---|
-| `dev_stop_dyn_plugin` | capmgr 三合一能力管理 v2（ | 动态 | Emergency stop for a running dynamic plugin by pluginId pref |
+| `forge_dev_stop_dyn_plugin` | capmgr 三合一能力管理 v2（ | 动态 | Emergency stop for a running dynamic plugin by pluginId pref |
 | `git_diff` | gitdock v8 完整版（宿主+ | 动态 | Show the git diff of the session workspace: unstaged changes |
 | `git_log` | gitdock v8 完整版（宿主+ | 动态 | Show the recent git commit history of the session workspace, |
 | `git_show` | gitdock v8 完整版（宿主+ | 动态 | Show one git commit in detail: full message, file stat, and  |

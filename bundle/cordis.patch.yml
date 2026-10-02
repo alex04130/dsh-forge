@@ -1,13 +1,25 @@
-# User patch: cross-session mailbox + multi-provider model delegation +
-# mid-session preset switching (authored 2026-08-13 by the cordis session).
-# Rows resolve ./plugins/*.mjs against this profile directory; they register
-# global tools so every session on every preset can call them, and the
-# mailbox listener is untagged so it serves every session-start in the process.
+# dsh-forge host-plane patch. Mirrors the live deployment
+# (~/.dsh/profiles/web/cordis.patch.yml) with the deployment-local `.rN` file
+# suffixes dropped — git tracks versions here.
 #
-# dynrestore is a local dual-face package: its client half re-mounts the
-# client halves of RUNNING dynamic plugins on page boot and connection reset,
-# so a page refresh no longer requires re-running plugins by hand.
+# Deliberately NOT carried over from the deployment:
+#   - mcp-github    LOCAL-ONLY personal integration; never sync to the repo/npm
+#   - toolsurface   retracted 2026-09-12: tools.restrict() removes a global tool
+#                   from that agent outright (the tool_router forwarder resolves
+#                   through the same visibility resolver, so it reported
+#                   `unknown tool "forge_model_list"`). Kept in the deployment
+#                   only as a negative sample.
+#   - labprobe      A/B mechanism probe, not a working component
 - insert:
+    # featsw must precede every other plugin: each plugin's registerTool checks
+    # ctx.get('featsw'), and the gate has to be ready for it to intercept.
+    - id: featsw
+      name: ./plugins/featsw.mjs
+
+    # ── Web console (2026-09-01): separate HTTP data plane (3081) ──
+    - id: console
+      name: ./plugins/console.mjs
+
     - id: mailbridge
       name: ./plugins/mailbridge.mjs
 
@@ -23,9 +35,9 @@
     - id: modsub
       name: ./plugins/modsub.mjs
 
-    # Runtime injection layer: inject local plugin packages into a running
-    # profile (symlink into profile node_modules + ctx.loader.create), with a
-    # durable registry (~/.dsh/injector/registry.json) that re-injects on boot.
+    # Runtime injection layer: symlink into the profile's node_modules +
+    # ctx.loader.create, with a durable registry (~/.dsh/injector/registry.json)
+    # that re-injects on boot.
     - id: injector
       name: ./plugins/injector.mjs
 
@@ -40,8 +52,30 @@
     - id: modelroute
       name: ./plugins/modelroute.mjs
 
+    # cordisinspect-shim NOT mounted (2026-10-02). It existed to make
+    # ctx.cordisInspect.register tolerate duplicates, because 0.1.5-era upstream
+    # threw on a repeated manifest id and every preset mounting dsh-tool-cordis
+    # registered the same providers. rc.2 moved the Host inspect providers to the
+    # PROFILE plane ("The Host inspect providers are process-global: the registry
+    # rejects a duplicate id, so they register here once and every preset's
+    # tool-cordis row reads them"), so the collision cannot happen structurally.
+    # The file is kept for a one-line rollback if a third-party double
+    # registration ever reappears.
+
     - id: dynboot
       name: ./plugins/dynboot.mjs
+
+    # forge-ui hot restorer: defines + runs host halves for manifest prefixes
+    # that are missing, so a merged panel takes effect without a restart
+    # (dynboot still owns the post-restart restore).
+    - id: forgeboot2
+      name: ./plugins/forgeboot2.mjs
+
+    # hotmgr "everything hot" watchdog: redefines dynplugins when their code
+    # changes, rescans changed client bundles, and version-renames static
+    # plugins to reload them.
+    - id: hotmgr
+      name: ./plugins/hotmgr.mjs
 
     - id: imgsubbridge
       name: ./plugins/imgsub-bridge.mjs
@@ -49,16 +83,88 @@
     - id: dynrestore
       name: '@local/dsh-dynrestore'
 
-    - id: plugmgr
-      name: '@local/dsh-plugmgr'
+    # Cross-session delivery card: renders `source.kind === 'mailbridge'` messages
+    # with their own icon and title instead of as a human bubble. Static client
+    # package (a dynamic half could not require the official ui-primitives icons).
+    - id: mailbridge-card
+      name: '@local/dsh-mailbridge-card'
 
-    # 经验体系（#71 拍板）：项目档案 / 言行一致检查器 / 最薄质粒。
-    # plsm 面板不进 insert，随动态清单（auto-plugins.json）走。
-    - id: archive
-      name: ./plugins/archive.mjs
+    # forge 主面板：侧栏 `forge` 入口（sidebar.panellist）+ `forge` 整页（main）。
+    # 宿主半部是空 apply —— 全是客户端槽位，数据走槽位主人已绑好的标准 props。
+    # 必须是静态客户端包：动态半部的沙箱没有 require，够不到 ui-primitives 与 ctx.remote。
+    - id: forge-ui
+      name: '@local/dsh-forge-ui'
 
-    - id: verify
-      name: ./plugins/verify.mjs
+    # 项目数据面：宿主 HTTP 上的 /dsh-forge/projects，供 forge-ui 的浏览器半部读写
+    # projects.json。不用官方 @Remote 是因为浏览器侧命名空间清单是构建期生成且外部加不进去
+    # （docs/ADAPTATION-0.2.0-rc.2.md §6.16）；CORS 与 OPTIONS 预检由它自己处理。
+    - id: projapi
+      name: ./plugins/projapi.mjs
 
+    # Authorization service seam: the deployment bundle omits this row, so
+    # llm-pi-ai's registerPiAiFlows (subscription OAuth flows) would never run.
+    - id: authorization
+      name: '@deepseek-ai/dsh-authorization'
+
+    # Codex subagent provider (host plane) — OUR implementation, not the official one.
+    #
+    # The official @deepseek-ai/dsh-subagent-codex lives at packages/subagent/subagent-codex
+    # in the harness repo, but it is one-shot by construction: it hardcodes
+    # `thread/start` with `ephemeral: true`, never calls `thread/resume`, and its wire
+    # surface only exposes initialize / thread/start / turn/start / turn/interrupt. Every
+    # run therefore gets a fresh Codex thread that dies with the process.
+    #
+    # codexsub.mjs keeps the thread: first run creates one (without `ephemeral`), later
+    # runs resume it by id, keyed by parent session, so a Codex conversation accumulates
+    # context across delegations. It registers the SAME provider name (`codex`), so this
+    # row REPLACES the official one — do not mount both.
+    #
+    # Its other differences from the official row: it needs neither a profile dependency
+    # on @deepseek-ai/dsh-subagent-codex nor a PATH `codex` at load time (the codex package
+    # is resolved lazily on first delegation, with a PATH fallback), so it cannot fail to
+    # import at boot the way the official row did.
+    - id: codexsub
+      name: ./plugins/codexsub.mjs
+
+    # Plasmid system. Disabled 2026-09-11 by the operator (files and data kept);
+    # re-enable by removing this line.
     - id: plasmid
       name: ./plugins/plasmid.mjs
+      disabled: true
+
+    # Project-memory CRUD (same files the console's memory page reads).
+    - id: projmem
+      name: ./plugins/projmem.mjs
+
+    # Cluster control endpoint on the HOST's own HTTP server (/forge-control), with a
+    # self-signed bearer token. In-process on purpose: the packaged dsh CLI refuses to
+    # operate an Electron-managed profile, so a Windows desktop node cannot be driven
+    # from outside except through its own process. Replaces the console's bespoke
+    # 3081 listener, which collided with any second instance (EADDRINUSE).
+    #
+    # Deployment note: this route rides the host's configured host/port. The default
+    # profile binds 127.0.0.1, so remote nodes cannot reach it until the node is
+    # started with an externally reachable --host.
+    - id: control
+      name: ./plugins/control.mjs
+
+    # Official Web-search settings section (Settings → Web search). The package
+    # ships inside the desktop bundle but this profile never mounted it — which is
+    # why the deployment carried a hand-rolled `web-search-select` that wrote the
+    # 0.1.5-era `ctx.web.searchProviderId` PROPERTY. rc.2's ctx.web has only
+    # registerSearchProvider/registerFetchProvider/search/fetch and resolves the
+    # provider from a configured id, so that property no longer exists and the
+    # hand-rolled selector silently did nothing. Mounting the official section
+    # restores switching on the supported seam.
+    - id: ui-settings-web-search
+      name: '@deepseek-ai/dsh-client-ui-settings-web-search'
+
+    - id: web-search-kimi
+      name: ./plugins/web-search-kimi.mjs
+
+    # Kept mounted for now so provider switching does not regress if the official
+    # section turns out to need configuration this profile lacks; remove after the
+    # Phase 8 test-profile run proves the official section alone switches
+    # providers. It is a no-op on rc.2 either way (see the note above).
+    - id: web-search-select
+      name: ./plugins/web-search-select.mjs

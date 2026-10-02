@@ -1,4 +1,4 @@
-// description: 运行时插件注入（dev_inject_plugin）：把本地插件包注入运行中的 profile，注册表在重启后自动恢复。
+// description: 运行时插件注入（forge_dev_inject_plugin）：把本地插件包注入运行中的 profile，注册表在重启后自动恢复。
 import { mkdir, symlink, readFile, rm, lstat } from 'node:fs/promises'
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -39,8 +39,38 @@ function linkType() {
   return process.platform === 'win32' ? 'junction' : 'dir'
 }
 
+// ── featsw 联动：每个注入包一个通道 `inject.<name>`（默认开；关掉=不注入） ──
+function featureIdOf(name) { return 'inject.' + String(name) }
+function featswOf(ctx) { try { return ctx.get ? ctx.get('featsw') : undefined } catch (error) { return undefined } }
+function declareInjectFeatures(ctx, names) {
+  try {
+    const f = featswOf(ctx)
+    if (f === undefined || typeof f.declareFeatures !== 'function') return
+    f.declareFeatures((Array.isArray(names) ? names : []).filter((n) => typeof n === 'string' && n !== '').map((n) => ({ id: featureIdOf(n), group: 'inject', label: '注入包：' + n })))
+  } catch (error) { /* best-effort */ }
+}
+/** 该注入包当前是否被 featsw 放行（缺 featsw 时一律放行，保持向后兼容）。 */
+function injectGateOpen(ctx, name) {
+  try {
+    const f = featswOf(ctx)
+    if (f === undefined || typeof f.isGateOpen !== 'function') return true
+    return f.isGateOpen(featureIdOf(name)) !== false
+  } catch (error) { return true }
+}
+
 // npm-style package names only: optionally scoped, lowercase, no path segments.
 const NAME_RE = /^(?:@[0-9a-z][0-9a-z._-]*\/)?[0-9a-z][0-9a-z._-]*$/
+
+// 当前 profile 目录，在 apply() 里从 profileContext 解析。
+// 此前硬编码 'web'，在任何其它 profile 下都会去读错的目录。
+let PROFILE_DIR = DSH_HOME + '/profiles/web'
+function runtimeProfileDir() { return PROFILE_DIR }
+function resolveProfileDir(ctx) {
+  const pc = ctx.get('profileContext')
+  return pc !== undefined && pc !== null && typeof pc.dir === 'string' && pc.dir !== ''
+    ? pc.dir
+    : DSH_HOME + '/profiles/web'
+}
 
 function assertSafeName(name) {
   if (!NAME_RE.test(name) || name.split('/').some((seg) => seg === '.' || seg === '..' || seg === '')) {
@@ -69,8 +99,11 @@ function nodeModulesTarget(name) {
 async function descriptionOf(moduleName) {
   const spec = String(moduleName ?? '')
   if (spec.startsWith('./') || spec.startsWith('../')) {
-    // loose .mjs plugin relative to the profile directory
-    const file = resolve(DSH_HOME, 'profiles', 'web', spec)
+    // Loose .mjs plugin living beside the profile patch. Resolve against the
+    // ACTIVE profile, not a hardcoded 'web' — otherwise this reads the wrong
+    // directory under any other profile.
+    const pc = runtimeProfileDir()
+    const file = resolve(pc, spec)
     try {
       const text = await readFile(file, 'utf8')
       const m = /^\/\/\s*description:\s*(.+)$/m.exec(text.slice(0, 4096))
@@ -136,6 +169,7 @@ async function removeLinkOnly(target) {
 export default {
   inject: ['tools', 'loader', 'webServer'],
   apply(ctx) {
+    PROFILE_DIR = resolveProfileDir(ctx)
     const loader = ctx.loader
 
     // Plugin-injection management is a host-control surface: restrict the
@@ -202,11 +236,32 @@ export default {
       await removeLinkOnly(nodeModulesTarget(name))
     }
 
+    // 0.2.0-rc.2: `loader.create` is `Omit<EntryOptions, 'id'>` — it mints its own
+    // 8-hex entry id via `ensureId()`, so the historical `id: slug(name)` was
+    // ignored. That silently broke both the "already online" dedup and
+    // `loader.remove(slug(name))`. Address entries by their module name instead.
+    function findEntryIdByName(name) {
+      for (const entry of loader.entries()) {
+        if (entry.options?.name === name) return entry.id
+      }
+      return undefined
+    }
+
+    function liveModuleNames() {
+      const names = new Set()
+      for (const entry of loader.entries()) {
+        const n = entry.options?.name
+        if (typeof n === 'string') names.add(n)
+      }
+      return names
+    }
+
     async function inject(dir) {
       const name = await linkPackage(dir)
-      const id = slug(name)
+      let entryId
       try {
-        await loader.create({ id, name, config: {} })
+        const entry = await loader.create({ name, config: {} })
+        entryId = entry?.id ?? findEntryIdByName(name)
       } catch (error) {
         await unlinkPackage(name).catch(() => {}) // roll back the orphan symlink
         throw error
@@ -216,15 +271,24 @@ export default {
           registry.plugins.push({ name, dir: resolve(dir) })
         }
       })
-      return { ok: true, name, id, dir: resolve(dir) }
+      // 2026-09-11：装包的同时登记 featsw 通道（原来只在自动恢复里登记，手工注入就丢了通道）。
+      declareInjectFeatures(ctx, [name])
+      return { ok: true, name, id: entryId, dir: resolve(dir) }
+    }
+
+    /** 只卸 fiber，不动注册表与符号链接 —— featsw 关闸用；重新打开必须还能装回来。 */
+    async function unloadFiber(name) {
+      assertSafeName(name)
+      try { loader.remove(findEntryIdByName(name) ?? slug(name)) } catch (error) { /* 已离线=幂等成功 */ }
+      return { ok: true, name, keptInRegistry: true }
     }
 
     async function uninject(name) {
       assertSafeName(name)
-      const id = slug(name)
+      const id = findEntryIdByName(name) ?? slug(name)
       const problems = []
       try {
-        await loader.remove(id)
+        loader.remove(id)
       } catch (error) {
         // An entry already gone (e.g. restore hasn't run yet) is an idempotent success.
         if (!/cannot resolve entry/.test(errText(error))) problems.push(`loader: ${errText(error)}`)
@@ -241,13 +305,12 @@ export default {
     }
 
     async function reload(name) {
-      const id = slug(name)
-      await loader.remove(id)
-      await loader.create({ id, name, config: {} })
-      return { ok: true, name, note: 're-created the entry; ESM module cache is NOT cleared yet' }
+      try { loader.remove(findEntryIdByName(name) ?? slug(name)) } catch (error) { /* absent is fine */ }
+      const entry = await loader.create({ name, config: {} })
+      return { ok: true, name, id: entry?.id ?? findEntryIdByName(name), note: 're-created the entry; ESM module cache is NOT cleared yet' }
     }
 
-    registerTool(ctx, 'dev_inject_plugin',
+    registerTool(ctx, 'forge_dev_inject_plugin',
       '把本地插件包运行时注入到正在运行的 web profile（无需重启，不改 patch/打包产物）。`dir` 必须包含一个带 `name` 和 `dsh`/bundle 声明的 package.json；Host 工具和客户端 UI 都会生效。仅主会话可用（子代理拒绝）。',
       { dir: { type: 'string', required: true, description: '插件包目录的绝对路径。' } },
       async (args, exec) => {
@@ -257,7 +320,7 @@ export default {
         return jsonText(await inject(dir))
       })
 
-    registerTool(ctx, 'dev_uninject_plugin',
+    registerTool(ctx, 'forge_dev_uninject_plugin',
       '取消注入一个运行时注入的插件包：fiber 被释放、符号链接移除、注册表条目删除。无需重启。仅主会话可用（子代理拒绝）。',
       { name: { type: 'string', required: true, description: '插件包名（或其子串）。' } },
       async (args, exec) => {
@@ -272,15 +335,8 @@ export default {
         return jsonText(await uninject(match.name))
       })
 
-    registerTool(ctx, 'dev_injected_list',
-      '列出每个运行时注入的插件包（名称 + 源目录）。',
-      {},
-      async () => {
-        await registryReady
-        return jsonText({ ok: true, count: registry.plugins.length, plugins: registry.plugins })
-      })
 
-    registerTool(ctx, 'dev_reload_package',
+    registerTool(ctx, 'forge_dev_reload_package',
       '重建一个注入的插件条目（释放 fiber + 重新导入）。注意：Node ESM 模块缓存尚未清除，因此编辑过的文件内容可能要到加载器清掉缓存后才生效。仅主会话可用（子代理拒绝）。',
       { name: { type: 'string', required: true, description: '插件包名。' } },
       async (args, exec) => {
@@ -290,7 +346,7 @@ export default {
         return jsonText(await reload(name))
       })
 
-    registerTool(ctx, 'dev_plugin_status',
+    registerTool(ctx, 'forge_dev_plugin_status',
       '显示注入器注册表以及每个在线 loader 条目（id + 名称 + 禁用状态）。',
       {},
       async () => {
@@ -304,31 +360,62 @@ export default {
       })
 
     // ── restart auto-restore ────────────────────────────────────────────────
+    // Runs once when this effect is set up, i.e. at plugin load. 0.2.0-rc.2 has
+    // no process-level "startup once" event: agent/created fires per entered
+    // agent and app-boot/config-reload fires on every profile reconcile, so a
+    // process-scoped restore belongs on the Cordis lifecycle instead.
     ctx.effect(() => {
-      let restored = false
-      const off = ctx.on('agent/session-start', () => {
-        if (restored) return
-        restored = true
-        registryReady.then(async () => {
-          const live = new Set([...loader.entries()].map((entry) => entry.id))
-          const snapshot = [...registry.plugins] // stable snapshot vs concurrent mutation
-          const results = []
-          for (const p of snapshot) {
-            if (p === null || typeof p !== 'object' || typeof p.name !== 'string' || typeof p.dir !== 'string') continue
-            if (live.has(slug(p.name))) continue // already online
-            try {
-              const r = await inject(p.dir)
-              results.push({ name: p.name, ok: true })
-            } catch (error) {
-              results.push({ name: p.name, ok: false, error: errText(error) })
-            }
+      let cancelled = false
+      registryReady.then(async () => {
+        if (cancelled) return
+        const live = liveModuleNames()
+        const snapshot = [...registry.plugins] // stable snapshot vs concurrent mutation
+        const results = []
+        declareInjectFeatures(ctx, snapshot.map((p) => (p && typeof p === 'object' ? p.name : undefined)))
+        for (const p of snapshot) {
+          if (p === null || typeof p !== 'object' || typeof p.name !== 'string' || typeof p.dir !== 'string') continue
+          if (live.has(p.name)) continue // already online
+          if (injectGateOpen(ctx, p.name) === false) { results.push({ name: p.name, ok: false, skipped: 'featsw-closed' }); continue }
+          try {
+            const r = await inject(p.dir)
+            results.push({ name: p.name, ok: true })
+          } catch (error) {
+            results.push({ name: p.name, ok: false, error: errText(error) })
           }
-          console.log('[injector] restore finished:', JSON.stringify(results))
-        }).catch((error) => {
-          console.error('[injector] restore crashed:', errText(error))
-        })
+        }
+        console.log('[injector] restore finished:', JSON.stringify(results))
+      }).catch((error) => {
+        console.error('[injector] restore crashed:', errText(error))
       })
-      return () => { try { off() } catch (error) { /* best-effort */ } }
+      return () => { cancelled = true }
+    })
+
+    // ── featsw 联动：开关关闭→卸载该注入包；打开→装回来（就地生效，不用重启） ──
+    ctx.effect(() => {
+      const f = featswOf(ctx)
+      if (f === undefined || typeof f.onChange !== 'function') return () => {}
+      let busy = false
+      async function reconcile() {
+        if (busy) return
+        busy = true
+        try {
+          await registryReady
+          const live = liveModuleNames()
+          for (const p of [...registry.plugins]) {
+            if (p === null || typeof p !== 'object' || typeof p.name !== 'string' || typeof p.dir !== 'string') continue
+            const want = injectGateOpen(ctx, p.name)
+            const online = live.has(p.name)
+            try {
+              if (want === false && online) await unloadFiber(p.name)
+              else if (want !== false && !online) await inject(p.dir)
+            } catch (error) { console.error("[injector] featsw reconcile failed for", p.name, errText(error)) }
+          }
+        } catch (error) {
+          console.error("[injector] featsw reconcile crashed:", errText(error))
+        } finally { busy = false }
+      }
+      const offChange = f.onChange(() => { reconcile().catch(() => {}) })
+      return () => { try { offChange() } catch (error) { /* best-effort */ } }
     })
   },
 }

@@ -1,4 +1,4 @@
-// description: 模型委派：model_list / model_call，把文本任务交给任意已配置的 provider/model 并取回完整结果。
+// description: 模型委派：forge_model_list / forge_model_call，把文本任务交给任意已配置的 provider/model 并取回完整结果。
 import { errText, jsonText } from './lib/forge-common.mjs'
 import { registerTool } from './lib/forge-tools.mjs'
 
@@ -15,8 +15,8 @@ export default {
     const skills = ctx.get('skills')
     if (llm === undefined) return
 
-    registerTool(ctx, 'model_list',
-      '列出本 DSH 进程中注册的每条 LLM 供应商路由及其提供的模型，外加一个反向索引（byModel：每个模型 id 由哪些供应商提供）。用于为 `model_call` 或 `spawn_model_subagent` 挑选 `provider`/`model` 组合，或检查某供应商/模型是否已配置。供应商通过 llm-pi-ai 设置项配置（baseURL/api/apiKeyEnv/models）；API 密钥按请求从凭据存储解析。用法规则见 `model-delegation` 技能。',
+    registerTool(ctx, 'forge_model_list',
+      '列出本 DSH 进程中注册的每条 LLM 供应商路由及其提供的模型，外加一个反向索引（byModel：每个模型 id 由哪些供应商提供）。用于为 `forge_model_call` 或 `spawn_model_subagent` 挑选 `provider`/`model` 组合，或检查某供应商/模型是否已配置。供应商通过 llm-pi-ai 设置项配置（baseURL/api/apiKeyEnv/models）；API 密钥按请求从凭据存储解析。用法规则见 `model-delegation` 技能。',
       {},
       async () => {
         const providers = llm.listProviders().map((p) => ({ id: p.id, name: p.name }))
@@ -41,10 +41,10 @@ export default {
         return jsonText({ ok: true, providers, models, byModel })
       })
 
-    registerTool(ctx, 'model_call',
-      '以一次性、纯文本补全的方式调用另一供应商（或同一供应商）的模型，并把它的完整回复作为本次工具调用的结果返回。这不是任务委派，也不是子代理：被借调模型只得到一个回合，不能调用工具，只返回文本；主模型始终掌控并消化回复。用于有边界的文本任务（翻译、摘要、分类、第二意见）。通过 `model_list` 挑选 `provider`/`model`。不支持嵌套工具调用：把被借调模型需要的一切都放进 prompt 和 system 文本里。用法规则见 `model-delegation` 技能。',
+    registerTool(ctx, 'forge_model_call',
+      '以一次性、纯文本补全的方式调用另一供应商（或同一供应商）的模型，并把它的完整回复作为本次工具调用的结果返回。这不是任务委派，也不是子代理：被借调模型只得到一个回合，不能调用工具，只返回文本；主模型始终掌控并消化回复。用于有边界的文本任务（翻译、摘要、分类、第二意见）。通过 `forge_model_list` 挑选 `provider`/`model`。不支持嵌套工具调用：把被借调模型需要的一切都放进 prompt 和 system 文本里。用法规则见 `model-delegation` 技能。',
       {
-        provider: { type: 'string', required: true, description: '供应商路由 id，如 "deepseek-official" 或 "kimi-coding"（见 model_list）。' },
+        provider: { type: 'string', required: true, description: '供应商路由 id，如 "deepseek-official" 或 "kimi-coding"（见 forge_model_list）。' },
         model: { type: 'string', required: true, description: '该供应商上的模型 id，如 "k3"。' },
         prompt: { type: 'string', required: true, description: '给被借调模型的任务文本。' },
         system: { type: 'string', description: '可选系统指令。' },
@@ -58,7 +58,7 @@ export default {
         const prompt = String(args.prompt)
         if (provider.length === 0 || model.length === 0 || prompt.length === 0) return jsonText({ ok: false, error: 'provider, model, and prompt are required' })
         const known = llm.listProviders().map((p) => p.id)
-        if (!known.includes(provider)) return jsonText({ ok: false, error: 'no adapter registered for provider "' + provider + '". Available: ' + known.join(', ') + '. See model_list.' })
+        if (!known.includes(provider)) return jsonText({ ok: false, error: 'no adapter registered for provider "' + provider + '". Available: ' + known.join(', ') + '. See forge_model_list.' })
         const messages = []
         if (Array.isArray(args.history)) {
           for (const item of args.history) {
