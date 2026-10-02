@@ -7,7 +7,6 @@
   "files": [
     "cordis.patch.yml",
     "plugins/",
-    "packages/",
     "README.md",
     "LICENSE",
     "NOTICE"
