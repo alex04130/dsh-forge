@@ -5,6 +5,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
+TMPW="$(cygpath -m "$TMP")"  # Windows 路径给 node/npm 用（MSYS /tmp 与 C:\tmp 不是一回事）
 trap 'rm -rf "$TMP"' EXIT
 VERSION="${1:-0.2.0-preview.1}"
 
@@ -24,7 +25,7 @@ for pair in dynrestore:dsh-dynrestore dsh-plugmgr:dsh-plugmgr dsh-forge-ui:dsh-f
   fi
   node -e "
     const fs = require('fs')
-    const f = '$TMP/$pkg/package.json'
+    const f = '$TMPW/$pkg/package.json'
     const j = JSON.parse(fs.readFileSync(f, 'utf8'))
     j.name = '@dsh-forge/$pkg'
     j.version = '$VERSION'

@@ -13,6 +13,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
+TMPW="$(cygpath -m "$TMP")"  # Windows 路径给 node/npm 用（MSYS /tmp 与 C:\tmp 不是一回事）
 trap 'rm -rf "$TMP"' EXIT
 VERSION="${1:-0.2.0-preview.1}"
 
@@ -21,7 +22,7 @@ cp -r "$ROOT/bundle/." "$TMP/bundle/"
 # 1) 依赖：link: → ^VERSION（名字 @local/* → @dsh-forge/* 一并对齐发布名）
 node -e "
   const fs = require('fs')
-  const f = '$TMP/bundle/package.json'
+  const f = '$TMPW/bundle/package.json'
   const j = JSON.parse(fs.readFileSync(f, 'utf8'))
   const MAP = {
     '@local/dsh-forge-ui': '@dsh-forge/dsh-forge-ui',
