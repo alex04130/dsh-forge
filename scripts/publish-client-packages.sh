@@ -41,7 +41,7 @@ for pair in dynrestore:dsh-dynrestore dsh-plugmgr:dsh-plugmgr dsh-forge-ui:dsh-f
   # registry 最终一致，回读可能短暂滞后：轮询重试 6 次 × 15 秒。
   ok=""
   for _ in 1 2 3 4 5 6; do
-    seen="$(npm view "@dsh-forge/$pkg" name version --cache /tmp/npm-cache 2>/dev/null)" || seen=""
+    seen="$(npm view "@dsh-forge/$pkg@$VERSION" name version --cache /tmp/npm-cache 2>/dev/null)" || seen=""
     if echo "$seen" | grep -q "@dsh-forge/$pkg" && echo "$seen" | grep -q "$VERSION"; then ok=1; break; fi
     sleep 15
   done
