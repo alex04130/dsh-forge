@@ -33,12 +33,21 @@ for pair in dynrestore:dsh-dynrestore dsh-plugmgr:dsh-plugmgr dsh-forge-ui:dsh-f
     fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n')
   "
   # --tag next：npm 11 起 prerelease 不指定 dist-tag 会拒绝发布（避免污染 latest）。
-  (cd "$TMP/$pkg" && npm publish --access public --tag next --cache /tmp/npm-cache)
+  # 发布被拒不立即失败：重跑场景下同名版本已存在（EPUBLISHCONFLICT），以回读核对为准。
+  if ! (cd "$TMP/$pkg" && npm publish --access public --tag next --cache /tmp/npm-cache); then
+    echo "[publish] $pkg 发布被拒（重跑时通常为版本已存在），以下方回读核对为准"
+  fi
   # 发布后核对：registry 上的 name/version 必须与刚发的一致（防 dir/name 分叉静默错发）。
-  seen="$(npm view "@dsh-forge/$pkg" name version --cache /tmp/npm-cache)"
+  # registry 最终一致，回读可能短暂滞后：轮询重试 6 次 × 15 秒。
+  ok=""
+  for _ in 1 2 3 4 5 6; do
+    seen="$(npm view "@dsh-forge/$pkg" name version --cache /tmp/npm-cache 2>/dev/null)" || seen=""
+    if echo "$seen" | grep -q "@dsh-forge/$pkg" && echo "$seen" | grep -q "$VERSION"; then ok=1; break; fi
+    sleep 15
+  done
   echo "$seen"
-  echo "$seen" | grep -q "@dsh-forge/$pkg" && echo "$seen" | grep -q "$VERSION" || {
-    echo "[publish] FAIL: @dsh-forge/$pkg 的 registry 回读与预期不符" >&2
+  [ -n "$ok" ] || {
+    echo "[publish] FAIL: @dsh-forge/$pkg 的 registry 回读与 $VERSION 不符" >&2
     exit 1
   }
 done

@@ -57,7 +57,13 @@ echo "[publish-bundle] 改写核对通过：@local/ 行 0 残留，link: 依赖 
 # 4) patch 三行指向的包必须在 registry 上已存在（依赖刚发的四个客户端包，顺序不能反）。
 #    任一取不到即 FAIL —— 挡住「包发出去了但名字对不上」这类 dry-run 看不出的失败。
 for row in dsh-dynrestore dsh-mailbridge-card dsh-forge-ui; do
-  seen="$(npm view "@dsh-forge/$row@$VERSION" version --cache /tmp/npm-cache 2>/dev/null)" || {
+  ok=""
+  for _ in 1 2 3 4 5 6; do
+    seen="$(npm view "@dsh-forge/$row@$VERSION" version --cache /tmp/npm-cache 2>/dev/null)" || seen=""
+    if [ -n "$seen" ]; then ok=1; break; fi
+    sleep 15
+  done
+  [ -n "$ok" ] || {
     echo "[publish-bundle] FAIL: patch 行指向的 @dsh-forge/$row@$VERSION 在 registry 取不到（客户端包先发了吗？）" >&2
     exit 1
   }
